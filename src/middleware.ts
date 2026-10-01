@@ -29,7 +29,8 @@ export const onRequest = defineMiddleware(async (context, next) => {
   }
   const finish = (response: Response) => {
     response.headers.set('X-Content-Type-Options', 'nosniff');
-    response.headers.set('Referrer-Policy', 'no-referrer');
+    // Preserve Origin on same-origin form POSTs; no-referrer can produce Origin: null.
+    response.headers.set('Referrer-Policy', 'same-origin');
     response.headers.set('X-Frame-Options', 'DENY');
     response.headers.set('Cache-Control', 'no-store');
     response.headers.set(

@@ -84,7 +84,20 @@ test('production server enforces session auth, viewer restrictions, revocation, 
     assert.equal((await request('/')).status, 302);
     assert.equal((await request('/api/config')).status, 401);
     assert.equal((await request('/api/status')).status, 401);
-    assert.equal((await request('/login')).status, 200);
+    const loginPage = await request('/login');
+    assert.equal(loginPage.status, 200);
+    assert.equal(loginPage.headers.get('referrer-policy'), 'same-origin');
+    assert.equal(
+      (
+        await form(
+          '/api/auth/login',
+          { username: 'tester', password: 'integration-password' },
+          '',
+          'null',
+        )
+      ).status,
+      403,
+    );
     assert.equal(
       (
         await form(
