@@ -31,7 +31,7 @@ cd TheDirectory
 
 Alternatively, download and extract the repository ZIP from GitHub and open a terminal in the extracted folder. If you already have the repository on your machine, open that folder instead of cloning it again.
 
-Run all remaining Docker commands from the folder containing `compose.yaml` and `Dockerfile`.
+Run all remaining Docker commands from the folder containing `compose.yaml`.
 
 ### Step 3: Create your environment file
 
@@ -67,16 +67,23 @@ Save the file. Leave `APP_ORIGIN` as `http://localhost:4321` for the local setup
 
 The `.env` file is ignored by Git. Keep it private and do not include it in screenshots or support messages.
 
-### Step 5: Validate, build, and start the container
+### Step 5: Validate, pull, and start the container
 
 ```sh
 docker compose config --quiet
-docker compose up -d --build
+docker compose pull
+docker compose up -d
 ```
 
 The first command validates the Compose configuration without printing your credentials. If it reports an error, fix that error before running the second command.
 
-The second command downloads the Node base image, installs dependencies, builds the Astro app, and starts it in the background. The first build may take several minutes and requires internet access. The image is built from this repository; there is no prebuilt image to pull yet.
+The second command downloads the prebuilt image from GitHub Container Registry (GHCR), and the third starts it in the background. Images support Linux AMD64 and ARM64. Once the package is public, pulling requires no GitHub account or registry login.
+
+To pull the image directly without Compose:
+
+```sh
+docker pull ghcr.io/endlesszombiez/thedirectory:latest
+```
 
 ### Step 6: Check the running service
 
@@ -142,17 +149,18 @@ Start it again:
 docker compose start directory
 ```
 
-After saving your own source changes or pulling a newer repository version, rebuild and recreate it:
+To download the latest published image and recreate the service:
 
 ```sh
-docker compose up -d --build directory
+docker compose pull directory
+docker compose up -d directory
 ```
 
 `docker compose down` removes the containers and network but preserves the named data volume. **Do not use `docker compose down -v` unless you intend to delete your dashboard, accounts, and sessions.**
 
 ### Step 10: Back up the persistent data
 
-Configuration and accounts are stored in the `directory-data` named volume mounted at `/app/data`. Compose normally prefixes the volume name with the project directory name. The files persist through container restarts and rebuilds.
+Configuration and accounts are stored in the `directory-data` named volume mounted at `/app/data`. Compose normally prefixes the volume name with the project directory name. The files persist through container restarts and image updates.
 
 For a consistent backup, stop the app, copy its data out, and start it again:
 
@@ -206,7 +214,24 @@ docker compose up -d directory
 
 For a local installation, stop the server and run `npm run reset-admin`. The recovery command requires access to the account data and only resets an existing administrator; it revokes that administrator's sessions. Protect `.env` and backups as private files. After bootstrap or recovery, you may clear the bootstrap credentials from `.env` and restart; accounts remain in the volume.
 
+## Publishing Docker images
+
+The [CI workflow](.github/workflows/ci.yaml) publishes `ghcr.io/endlesszombiez/thedirectory` after the build, tests, and Docker smoke test pass. Pushes to `main` update `latest`; every published build also gets a `sha-<short-commit>` tag. Pushing a version tag such as `v0.1.0` publishes `0.1.0` and `0.1` image tags. Version-tag builds do not replace `latest`. You can also select **Run workflow** on the Actions CI page with `main` selected to republish it.
+
+Publishing uses the workflow's `GITHUB_TOKEN` with `packages: write`; no separate registry secret is needed. Images include a source label linking them to this repository.
+
+GitHub creates new GHCR packages as private, even when the repository is public. After the first successful publish, open the [package page](https://github.com/users/Endlesszombiez/packages/container/package/thedirectory), select **Package settings**, and change the package visibility to **Public**. This one-time setting allows unauthenticated pulls. Repository visibility and package visibility are separate.
+
 ## Local development
+
+To build your own Docker image from local source changes and use it with the supplied Compose file:
+
+```sh
+docker build -t ghcr.io/endlesszombiez/thedirectory:latest .
+docker compose up -d --pull never directory
+```
+
+Running `docker compose pull` later replaces that local image with the published version.
 
 Requires Node.js 22.12+ (Node 22 LTS recommended).
 

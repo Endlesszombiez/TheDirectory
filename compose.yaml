@@ -1,6 +1,6 @@
 services:
   directory:
-    build: .
+    image: ghcr.io/endlesszombiez/thedirectory:latest
     container_name: thedirectory
     restart: unless-stopped
     ports:
