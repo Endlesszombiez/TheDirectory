@@ -4,15 +4,181 @@ A self-hosted homelab homepage built with Astro, React, and TypeScript. Inspired
 
 ## Run in Docker
 
-Copy `.env.example` to `.env`. Set `DASHBOARD_USERNAME` (3–40 lowercase letters/numbers/dots/dashes/underscores, starting with a letter or number) and a unique `DASHBOARD_PASSWORD` (12–128 characters). These create the first administrator; there is no default password or public signup.
+Follow these steps in order. Start by getting the app working locally, then follow the public-access steps below if you want to reach it through your domain. You do not need Node.js or npm installed on the Docker host.
+
+### Step 1: Install Docker and check that it is running
+
+On Windows or macOS, install [Docker Desktop](https://www.docker.com/products/docker-desktop/) and start it. On Windows, use Linux containers; the image is based on Alpine Linux. On a Linux server, install [Docker Engine](https://docs.docker.com/engine/install/) and the [Docker Compose plugin](https://docs.docker.com/compose/install/linux/).
+
+Open PowerShell on Windows or a terminal on Linux/macOS and run:
 
 ```sh
+docker --version
+docker compose version
+docker info
+```
+
+The first two commands should print version numbers. `docker info` should show server information without a connection error. If Docker Desktop is installed but stopped, start it before continuing. On Linux, your account must have permission to use Docker, or you must run the Docker commands with `sudo`.
+
+### Step 2: Download the repository
+
+If you have Git installed:
+
+```sh
+git clone https://github.com/Endlesszombiez/TheDirectory.git
+cd TheDirectory
+```
+
+Alternatively, download and extract the repository ZIP from GitHub and open a terminal in the extracted folder. If you already have the repository on your machine, open that folder instead of cloning it again.
+
+Run all remaining Docker commands from the folder containing `compose.yaml` and `Dockerfile`.
+
+### Step 3: Create your environment file
+
+On Windows, run this in PowerShell:
+
+```powershell
+Copy-Item .env.example .env
+notepad .env
+```
+
+On Linux/macOS:
+
+```sh
+cp .env.example .env
+nano .env
+```
+
+Copy the example only on your first setup; copying it again would overwrite your existing settings. You can use any text editor in place of Notepad or nano. On Windows, make sure the saved filename is `.env`, not `.env.txt`.
+
+### Step 4: Set your administrator credentials
+
+Edit the following three values in `.env`:
+
+```dotenv
+DASHBOARD_USERNAME=admin
+DASHBOARD_PASSWORD='REPLACE_THIS_WITH_YOUR_OWN_UNIQUE_PASSWORD'
+APP_ORIGIN=http://localhost:4321
+```
+
+Replace the password placeholder with your own unique password before starting the container. The username must be 3–40 lowercase letters, numbers, dots, dashes, or underscores and start with a letter or number. The password must be 12–128 characters. Single quotes around a password prevent Compose from treating `$` characters as variable references; choose a password without a single quote if using this example's quoting.
+
+Save the file. Leave `APP_ORIGIN` as `http://localhost:4321` for the local setup. There is no default password or public signup. Missing or invalid first-run credentials leave the dashboard locked.
+
+The `.env` file is ignored by Git. Keep it private and do not include it in screenshots or support messages.
+
+### Step 5: Validate, build, and start the container
+
+```sh
+docker compose config --quiet
 docker compose up -d --build
 ```
 
-Open `http://localhost:4321` and sign in. Compose binds the port to loopback for a reverse proxy on the same host. Configuration and accounts are stored in the `directory-data` Docker volume. Back up the volume to preserve both; dashboard JSON exports do not include accounts or sessions.
+The first command validates the Compose configuration without printing your credentials. If it reports an error, fix that error before running the second command.
 
-Login is always required. Missing or invalid first-run credentials leave the dashboard locked. Once accounts exist, the bootstrap variables are ignored: changing them does not change an existing account's password.
+The second command downloads the Node base image, installs dependencies, builds the Astro app, and starts it in the background. The first build may take several minutes and requires internet access. The image is built from this repository; there is no prebuilt image to pull yet.
+
+### Step 6: Check the running service
+
+```sh
+docker compose ps
+docker compose logs --tail=100 directory
+```
+
+Look for the `directory` service, container name `thedirectory`, and a running status. The health status may show `starting` initially; allow about a minute for it to become `healthy`. The logs should show the server listening on port `4321` inside the container.
+
+Open `http://localhost:4321/api/health` in your browser. A running service returns:
+
+```json
+{ "status": "ok" }
+```
+
+This endpoint checks that the web process is responding. Login and first-run account setup are checked separately in the next step.
+
+### Step 7: Sign in and configure your dashboard
+
+Open **http://localhost:4321** in a browser on the same machine that runs Docker. Sign in using the username and password you saved in `.env`.
+
+- Use **Edit dashboard** to change the example service cards to your real homelab URLs.
+- Use **Customization** to adjust the layout, themes, widgets, and backgrounds.
+- Open **People & permissions** to create additional accounts. Use the **Viewer** role for people who should not edit your dashboard.
+- Open **My account** through your username in the sidebar to change your password or sign out.
+
+The starter `.home` service addresses are examples. Docker does not create those services or DNS entries. Health checks run from inside the container, so monitored URLs must be reachable from the container; `localhost` in a service URL refers to the container itself, not another machine in your homelab.
+
+Once accounts exist, the bootstrap variables are ignored: changing `DASHBOARD_PASSWORD` in `.env` does not change an existing account's password. Use **My account**, the administrator's user management page, or the [account recovery procedure](#account-recovery).
+
+### Step 8: Access an installation on a remote server
+
+The supplied Compose file binds port `4321` to `127.0.0.1` on the Docker host. This allows a reverse proxy on that host to connect, while keeping the application port off the public network.
+
+If Docker runs on a remote Linux server, you can test it from your computer using an SSH tunnel:
+
+```sh
+ssh -L 4321:127.0.0.1:4321 your-user@your-docker-server
+```
+
+Replace the username and server address, keep the SSH session open, and browse to `http://localhost:4321` on your computer. This uses the same local `APP_ORIGIN` from step 4. Your computer's port `4321` must be free.
+
+For normal public access through a domain, follow [Public access and account permissions](#public-access-and-account-permissions) below. After changing `APP_ORIGIN` in `.env`, apply it with:
+
+```sh
+docker compose up -d --force-recreate directory
+```
+
+Then use the exact HTTPS URL you configured. A plain `docker compose restart` does not reload changed environment variables.
+
+### Step 9: Stop, restart, and update the app
+
+Stop the service while keeping the container and data:
+
+```sh
+docker compose stop directory
+```
+
+Start it again:
+
+```sh
+docker compose start directory
+```
+
+After saving your own source changes or pulling a newer repository version, rebuild and recreate it:
+
+```sh
+docker compose up -d --build directory
+```
+
+`docker compose down` removes the containers and network but preserves the named data volume. **Do not use `docker compose down -v` unless you intend to delete your dashboard, accounts, and sessions.**
+
+### Step 10: Back up the persistent data
+
+Configuration and accounts are stored in the `directory-data` named volume mounted at `/app/data`. Compose normally prefixes the volume name with the project directory name. The files persist through container restarts and rebuilds.
+
+For a consistent backup, stop the app, copy its data out, and start it again:
+
+```sh
+docker compose stop directory
+docker compose cp directory:/app/data ./directory-backup
+docker compose start directory
+```
+
+Use a new destination folder for each backup. Store the backup privately: it includes account password hashes and hashed session records. **Export dashboard** in the app backs up dashboard configuration only; it does not include accounts or sessions.
+
+### Docker troubleshooting
+
+| Symptom                                                       | What to check                                                                                                                                                                                   |
+| ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `docker` is not recognized or `docker compose` is unavailable | Install Docker Desktop or Docker Engine with the Compose plugin, then open a new terminal.                                                                                                      |
+| Cannot connect to the Docker daemon                           | Start Docker Desktop or the Docker service. On Linux, check your account's Docker permissions.                                                                                                  |
+| `no configuration file provided`                              | Run the command from the repository folder containing `compose.yaml`.                                                                                                                           |
+| Port `4321` is already allocated                              | Stop the other service, or change the host mapping to `127.0.0.1:8080:4321` and set `APP_ORIGIN=http://localhost:8080`. Recreate the container and use the new URL.                             |
+| Browser cannot reach the page                                 | Check `docker compose ps` and logs. Use `localhost` on the Docker host, an SSH tunnel, or your configured reverse proxy; the default port is not bound to the server's public IP.               |
+| “Set up your administrator” appears                           | Check that `.env` exists and contains a valid username and a password of at least 12 characters. Recreate the service after correcting it.                                                      |
+| “Invalid origin” on login or saving                           | Make `APP_ORIGIN` match the browser's scheme, hostname, and port exactly, with no trailing slash. `localhost` and `127.0.0.1` are different origins. Recreate the service after editing `.env`. |
+| HTTPS login fails or does not stay signed in                  | Use the HTTPS URL specified by `APP_ORIGIN`, ensure your proxy forwards the original Host header, and verify TLS is working. HTTPS sessions use Secure cookies.                                 |
+| Changing `.env` did not change the administrator password     | Existing accounts are stored in the volume. Follow [Account recovery](#account-recovery) instead.                                                                                               |
+| “Too many attempts” appears                                   | Wait 15 minutes before trying again; login attempts are throttled.                                                                                                                              |
+| The container exits or stays unhealthy                        | Read `docker compose logs --tail=100 directory`. Check build errors and data-volume permissions. The app runs as the unprivileged `node` user.                                                  |
 
 ## Public access and account permissions
 
