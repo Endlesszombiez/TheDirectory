@@ -1,0 +1,61 @@
+---
+import '../styles/global.css';
+import '../styles/auth.css';
+interface Props {
+  title: string;
+}
+const { title } = Astro.props;
+const user = Astro.locals.user;
+const error = Astro.url.searchParams.get('error');
+const message = Astro.url.searchParams.get('message');
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex,nofollow" />
+    <link rel="icon" href="/favicon.svg" />
+    <title>{title} · The Directory</title>
+  </head>
+  <body>
+    <div class:list={['account-shell', { 'signed-in': user }]}>
+      <a class="brand" href="/">
+        <img src="/favicon.svg" width="33" height="33" alt="" />
+        the directory<span class="brand-period">.</span>
+      </a>
+      {user && (
+        <nav class="account-nav" aria-label="Account navigation">
+          <a href="/">Dashboard</a>
+          <a href="/account">My account</a>
+          {user.role === 'admin' && <a href="/users">Manage users</a>}
+          <form method="post" action="/api/auth/logout">
+            <button class="button">Sign out</button>
+          </form>
+        </nav>
+      )}
+      <section class="account-card">
+        <div class="eyebrow">YOUR SERVICES. YOUR SPACE.</div>
+        <h1>
+          {title}
+          <span class="greeting-dot">.</span>
+        </h1>
+        {error && (
+          <p class="alert" role="alert">
+            {error}
+          </p>
+        )}
+        {message && (
+          <p class="account-success" role="status">
+            {message}
+          </p>
+        )}
+        <slot />
+      </section>
+      <p class="account-footer">
+        A little corner of the web. Only for the people you invite.
+      </p>
+    </div>
+  </body>
+</html>

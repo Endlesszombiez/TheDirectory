@@ -1,0 +1,59 @@
+---
+import AccountLayout from '../layouts/AccountLayout.astro';
+import { ensureBootstrap } from '../lib/auth';
+if (Astro.locals.user) return Astro.redirect('/');
+const ready = await ensureBootstrap();
+if (!ready) Astro.response.status = 503;
+---
+
+<AccountLayout title={ready ? 'Welcome home' : 'Set up your administrator'}>
+  {ready ? (
+    <>
+      <p class="account-intro">Sign in to your homelab directory.</p>
+      <form method="post" action="/api/auth/login" class="account-form">
+        <label>
+          Username
+          <input
+            name="username"
+            autocomplete="username"
+            required
+            maxlength="40"
+            autofocus
+          />
+        </label>
+        <label>
+          Password
+          <input
+            type="password"
+            name="password"
+            autocomplete="current-password"
+            required
+            maxlength="128"
+          />
+        </label>
+        <button class="button primary full-width">Sign in</button>
+      </form>
+      <p class="account-help">
+        Accounts are created by your administrator. Sessions expire after 12
+        hours.
+      </p>
+    </>
+  ) : (
+    <>
+      <p class="account-intro">
+        Login is required before your dashboard can be accessed.
+      </p>
+      <p class="account-help">
+        Set <code>DASHBOARD_USERNAME</code> and <code>DASHBOARD_PASSWORD</code>{' '}
+        in your server environment, then restart the service. The username must
+        be 3–40 characters; the password must be at least 12 characters. The
+        first account is created as an administrator.
+      </p>
+      <p class="account-help">
+        For public access, also set <code>APP_ORIGIN</code> to your HTTPS
+        address and configure TLS on your reverse proxy. There is no public
+        signup.
+      </p>
+    </>
+  )}
+</AccountLayout>

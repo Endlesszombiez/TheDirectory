@@ -1,0 +1,16 @@
+services:
+  directory:
+    build: .
+    container_name: thedirectory
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:4321:4321'
+    volumes:
+      - directory-data:/app/data
+    environment:
+      DASHBOARD_USERNAME: ${DASHBOARD_USERNAME:-}
+      DASHBOARD_PASSWORD: ${DASHBOARD_PASSWORD:-}
+      APP_ORIGIN: ${APP_ORIGIN:-http://localhost:4321}
+      # Optional: DOCKER_SOCKET=/var/run/docker.sock (see README security notes).
+volumes:
+  directory-data:

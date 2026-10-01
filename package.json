@@ -1,0 +1,37 @@
+{
+  "name": "thedirectory",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --env-file-if-exists=.env ./node_modules/astro/bin/astro.mjs dev --host 0.0.0.0",
+    "build": "astro check && astro build",
+    "start": "node --env-file-if-exists=.env ./dist/server/entry.mjs",
+    "test": "tsx --test tests/*.test.ts",
+    "test:integration": "tsx --test tests/*.integration.ts",
+    "reset-admin": "node --env-file-if-exists=.env scripts/reset-admin.mjs",
+    "format": "prettier --write src tests scripts package.json tsconfig.json astro.config.mjs .prettierrc.json README.md compose.yaml .github/workflows/ci.yaml"
+  },
+  "dependencies": {
+    "@astrojs/node": "^11.1.6",
+    "@astrojs/react": "^7.0.0",
+    "astro": "^7.3.5",
+    "lucide-react": "^0.577.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.8",
+    "@types/node": "^22.19.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "prettier": "^3.9.9",
+    "prettier-plugin-astro": "^1.1.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}

@@ -1,0 +1,5 @@
+# Run Caddy on the Docker host and replace this with your real public hostname.
+# Set APP_ORIGIN=https://lab.example.com in the application's .env file.
+lab.example.com {
+  reverse_proxy 127.0.0.1:4321
+}

@@ -1,0 +1,40 @@
+---
+import AccountLayout from '../layouts/AccountLayout.astro';
+const user = Astro.locals.user!;
+---
+
+<AccountLayout title="Your account">
+  <p class="account-intro">
+    Signed in as <strong>{user.username}</strong> ·{' '}
+    {user.role === 'admin' ? 'Administrator' : 'Viewer'}
+  </p>
+  <h2>Change password</h2>
+  <form method="post" action="/api/auth/password" class="account-form">
+    <label>
+      Current password
+      <input
+        type="password"
+        name="currentPassword"
+        autocomplete="current-password"
+        required
+        maxlength="128"
+      />
+    </label>
+    <label>
+      New password
+      <input
+        type="password"
+        name="newPassword"
+        autocomplete="new-password"
+        required
+        minlength="12"
+        maxlength="128"
+      />
+      <small>12–128 characters. All your sessions will be signed out.</small>
+    </label>
+    <button class="button primary">Change password</button>
+  </form>
+  <form method="post" action="/api/auth/logout">
+    <button class="button">Sign out of this session</button>
+  </form>
+</AccountLayout>

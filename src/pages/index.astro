@@ -1,0 +1,24 @@
+---
+import Dashboard from '../components/Dashboard';
+import { readConfig } from '../lib/store';
+import '../styles/global.css';
+const config = await readConfig();
+---
+
+<!doctype html>
+<html lang="en" data-theme={config.theme} data-accent={config.accent}>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#101412" />
+    <meta
+      name="description"
+      content="Your services, your space. A customizable homelab dashboard."
+    />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>{config.title} · Homelab</title>
+  </head>
+  <body>
+    <Dashboard initialConfig={config} user={Astro.locals.user!} client:load />
+  </body>
+</html>
