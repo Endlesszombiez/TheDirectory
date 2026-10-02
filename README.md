@@ -106,7 +106,7 @@ This endpoint checks that the web process is responding. Login and first-run acc
 
 Open **http://localhost:4321** in a browser on the same machine that runs Docker. Sign in using the username and password you saved in `.env`.
 
-- Use **Edit dashboard** to change the example service cards to your real homelab URLs.
+- Use **Edit dashboard** to change the example service cards to your real homelab URLs, remove individual cards, or choose **Remove all services** to clear the current board.
 - Use **Customization** to adjust the layout, themes, widgets, and backgrounds.
 - Open **People & permissions** to create additional accounts. Use the **Viewer** role for people who should not edit your dashboard.
 - Open **My account** through your username in the sidebar to change your password or sign out.

@@ -178,6 +178,12 @@ export default function Dashboard({
   useEffect(() => {
     document.documentElement.dataset.theme = config.theme;
     document.documentElement.dataset.accent = config.accent;
+    document
+      .querySelector('meta[name="theme-color"]')
+      ?.setAttribute(
+        'content',
+        config.theme === 'light' ? '#f5f7f3' : '#101412',
+      );
     document.title = `${config.title} · Homelab`;
   }, [config.theme, config.accent, config.title]);
   useEffect(() => {
@@ -567,6 +573,27 @@ export default function Dashboard({
                   <kbd>⌘ K</kbd>
                 </div>
               </div>
+              {canEdit && editing && (
+                <div className="edit-toolbar">
+                  <p>Edit, reorder, or remove your service cards.</p>
+                  <button
+                    className="button"
+                    disabled={saving || !board.services.length}
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          `Remove all ${board.services.length} services from ${board.name}? This cannot be undone.`,
+                        )
+                      ) {
+                        void persist(updateBoard([]));
+                      }
+                    }}
+                  >
+                    <Trash2 size={14} />
+                    Remove all services
+                  </button>
+                </div>
+              )}
               {!services.length && (
                 <div className="empty-state">
                   <Search size={28} />
@@ -681,12 +708,15 @@ export default function Dashboard({
                               <div className="card-edit">
                                 <button
                                   aria-label={`Edit ${s.name}`}
+                                  title={`Edit ${s.name}`}
+                                  disabled={saving}
                                   onClick={() => setService({ ...s })}
                                 >
                                   <Pencil size={14} />
                                 </button>
                                 <button
                                   aria-label={`Move ${s.name} up`}
+                                  title={`Move ${s.name} up`}
                                   disabled={
                                     saving || board.services[0].id === s.id
                                   }
@@ -696,6 +726,7 @@ export default function Dashboard({
                                 </button>
                                 <button
                                   aria-label={`Move ${s.name} down`}
+                                  title={`Move ${s.name} down`}
                                   disabled={
                                     saving || board.services.at(-1)?.id === s.id
                                   }
@@ -705,6 +736,7 @@ export default function Dashboard({
                                 </button>
                                 <button
                                   aria-label={`Delete ${s.name}`}
+                                  title={`Remove ${s.name}`}
                                   disabled={saving}
                                   onClick={() => {
                                     if (
@@ -722,6 +754,7 @@ export default function Dashboard({
                                   }}
                                 >
                                   <Trash2 size={14} />
+                                  Remove
                                 </button>
                               </div>
                             )}

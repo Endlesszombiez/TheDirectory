@@ -2,8 +2,8 @@
 
 :root {
   font-family: 'DM Sans', sans-serif;
-  color: #e4e9e5;
-  background: #101412;
+  color: var(--text);
+  background: var(--bg);
   font-synthesis: none;
   --bg: #101412;
   --panel: #171c19;
@@ -13,6 +13,7 @@
   --text: #e4e9e5;
   --accent: #a4edbb;
   --accent-rgb: 164, 237, 187;
+  --on-accent: #14271b;
   --sidebar: #131815;
   --field: #101512;
   color-scheme: dark;
@@ -28,7 +29,7 @@
   --accent-rgb: 44, 134, 80;
   --sidebar: #edf2eb;
   --field: #f7faf5;
-  color: #223126;
+  --on-accent: #fff;
   color-scheme: light;
 }
 :root[data-accent='blue'] {
@@ -42,6 +43,18 @@
 :root[data-accent='orange'] {
   --accent: #efb57d;
   --accent-rgb: 239, 181, 125;
+}
+:root[data-theme='light'][data-accent='blue'] {
+  --accent: #2566a8;
+  --accent-rgb: 37, 102, 168;
+}
+:root[data-theme='light'][data-accent='purple'] {
+  --accent: #7950ad;
+  --accent-rgb: 121, 80, 173;
+}
+:root[data-theme='light'][data-accent='orange'] {
+  --accent: #a65316;
+  --accent-rgb: 166, 83, 22;
 }
 * {
   box-sizing: border-box;
@@ -131,7 +144,7 @@ p {
 }
 .brand-icon {
   background: var(--accent);
-  color: #183523;
+  color: var(--on-accent);
   display: grid;
   place-items: center;
   border-radius: 9px;
@@ -417,7 +430,7 @@ h1 {
 }
 .button.primary {
   background: var(--accent);
-  color: #14271b;
+  color: var(--on-accent);
   border-color: var(--accent);
   font-weight: 650;
 }
@@ -667,6 +680,16 @@ kbd {
 .service-status.down .dot {
   background: #ef9991;
 }
+.edit-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 20px;
+  color: var(--muted);
+  font-size: 12px;
+}
 .card-edit {
   display: flex;
   border-top: 1px solid var(--border);
@@ -674,6 +697,9 @@ kbd {
   padding: 5px;
 }
 .card-edit button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   color: var(--muted);
   padding: 5px;
   border-radius: 4px;
@@ -775,7 +801,7 @@ kbd {
     rgba(var(--accent-rgb), 0.06),
     var(--panel)
   );
-  border-color: #35463a;
+  border-color: var(--border);
 }
 .clock-time {
   font-family: Manrope, sans-serif;
@@ -1010,7 +1036,7 @@ kbd {
   gap: 9px;
   align-items: center;
   background: var(--accent);
-  color: #183523;
+  color: var(--on-accent);
   box-shadow: 0 8px 40px #0004;
   border-radius: 9px;
   padding: 13px 20px;

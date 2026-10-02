@@ -10,7 +10,10 @@ const config = await readConfig();
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#101412" />
+    <meta
+      name="theme-color"
+      content={config.theme === 'light' ? '#f5f7f3' : '#101412'}
+    />
     <meta
       name="description"
       content="Your services, your space. A customizable homelab dashboard."
