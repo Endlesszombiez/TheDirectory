@@ -1,4 +1,4 @@
-import { request as httpRequest } from 'node:http';
+import { dockerConfigured, listContainers } from './docker';
 import os from 'node:os';
 import type { Config } from './schema';
 export type Health = {
@@ -82,61 +82,21 @@ export function dockerInfo(): Promise<{
   }[];
   error?: string;
 }> {
-  const socketPath = process.env.DOCKER_SOCKET;
-  if (!socketPath) return Promise.resolve({ configured: false });
-  return new Promise((resolve) => {
-    const request = httpRequest(
-      { socketPath, path: '/containers/json?all=true', method: 'GET' },
-      (response) => {
-        let data = '';
-        response.setEncoding('utf8');
-        response.on('data', (chunk) => {
-          data += chunk;
-          if (data.length > 2_000_000)
-            request.destroy(new Error('Response too large'));
-        });
-        response.on('end', () => {
-          try {
-            if (response.statusCode !== 200)
-              throw new Error('Docker returned an error');
-            const parsed = JSON.parse(data);
-            resolve({
-              configured: true,
-              containers: parsed.map(
-                (c: {
-                  Id: string;
-                  Names: string[];
-                  Image: string;
-                  State: string;
-                  Status: string;
-                }) => ({
-                  id: c.Id,
-                  name: c.Names[0]?.replace(/^\//, '') || c.Id.slice(0, 12),
-                  image: c.Image,
-                  state: c.State,
-                  status: c.Status,
-                }),
-              ),
-            });
-          } catch {
-            resolve({
-              configured: true,
-              error: 'Unable to read Docker containers',
-            });
-          }
-        });
-        response.on('error', () =>
-          resolve({ configured: true, error: 'Docker connection interrupted' }),
-        );
-      },
-    );
-    request.setTimeout(3000, () => request.destroy(new Error('Timeout')));
-    request.on('error', () =>
-      resolve({
-        configured: true,
-        error: 'Docker socket unavailable. Check its path and permissions.',
-      }),
-    );
-    request.end();
-  });
+  if (!dockerConfigured()) return Promise.resolve({ configured: false });
+  return listContainers().then(
+    (containers) => ({
+      configured: true,
+      containers: containers.map((c) => ({
+        id: c.Id,
+        name: c.Names[0]?.replace(/^\//, '') || c.Id.slice(0, 12),
+        image: c.Image,
+        state: c.State,
+        status: c.Status,
+      })),
+    }),
+    () => ({
+      configured: true,
+      error: 'Docker unavailable. Check its path, connection, and permissions.',
+    }),
+  );
 }

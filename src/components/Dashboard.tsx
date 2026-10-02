@@ -34,9 +34,11 @@ import {
   Upload,
   Pencil,
   RefreshCw,
+  Sparkles,
 } from 'lucide-react';
 import { configSchema, type Config, type Service } from '../lib/schema';
 import type { PublicUser } from '../lib/auth';
+import DashboardSetup from './DashboardSetup';
 
 const icons = {
   server: Server,
@@ -104,6 +106,7 @@ export default function Dashboard({
   const [query, setQuery] = useState('');
   const [editing, setEditing] = useState(false);
   const [settings, setSettings] = useState(false);
+  const [setup, setSetup] = useState(false);
   const [service, setService] = useState<Service | null>(null);
   const [status, setStatus] = useState<Status | null>(null);
   const [statusError, setStatusError] = useState(false);
@@ -161,6 +164,7 @@ export default function Dashboard({
       if (event.key === 'Escape') {
         setService(null);
         setSettings(false);
+        setSetup(false);
         setMobile(false);
         searchRef.current?.blur();
       }
@@ -192,7 +196,7 @@ export default function Dashboard({
     return () => clearTimeout(timer);
   }, [message]);
   useEffect(() => {
-    if (!settings && !service) return;
+    if (!settings && !service && !setup) return;
     const previous = document.activeElement as HTMLElement | null;
     const timer = setTimeout(
       () =>
@@ -205,7 +209,7 @@ export default function Dashboard({
       if (event.key !== 'Tab') return;
       const elements = Array.from(
         document.querySelectorAll<HTMLElement>(
-          '.modal button:not(:disabled), .modal input, .modal select, .modal textarea, .modal a[href]',
+          '.modal button:not(:disabled), .modal input:not(:disabled):not([hidden]), .modal select:not(:disabled), .modal textarea:not(:disabled), .modal a[href]',
         ),
       );
       const first = elements[0],
@@ -224,7 +228,7 @@ export default function Dashboard({
       document.removeEventListener('keydown', trap);
       previous?.focus();
     };
-  }, [settings, !!service]);
+  }, [settings, !!service, setup]);
 
   async function persist(next: Config) {
     if (!canEdit) return false;
@@ -407,6 +411,10 @@ export default function Dashboard({
               <Settings2 size={18} />
               <span>Customization</span>
             </button>
+            <button className="nav-item" onClick={() => setSetup(true)}>
+              <Sparkles size={18} />
+              <span>Set up dashboard</span>
+            </button>
             <button className="nav-item" onClick={exportConfig}>
               <Download size={18} />
               <span>Export dashboard</span>
@@ -417,6 +425,10 @@ export default function Dashboard({
             </a>
           </>
         )}
+        <a className="nav-item" href="/ai">
+          <Sparkles size={18} />
+          <span>AI settings</span>
+        </a>
         <div className="sidebar-bottom">
           <div className="home-card">
             <span className="home-card-icon">
@@ -1002,6 +1014,23 @@ export default function Dashboard({
           {message}
         </div>
       )}
+      {canEdit && setup && (
+        <DashboardSetup
+          config={config}
+          boardId={board.id}
+          saving={saving}
+          saveError={error}
+          onClose={() => setSetup(false)}
+          onApply={async (next) => {
+            if (await persist(next)) {
+              if (!next.boards.some((b) => b.id === boardId))
+                setBoardId(next.boards[0].id);
+              return true;
+            }
+            return false;
+          }}
+        />
+      )}
       {canEdit && (service || settings) && (
         <div
           className="modal-backdrop"
@@ -1370,6 +1399,15 @@ export default function Dashboard({
                 </div>
                 <div className="settings-section">
                   <h3>Docker integration</h3>
+                  <button
+                    className="button"
+                    onClick={() => {
+                      setSettings(false);
+                      setSetup(true);
+                    }}
+                  >
+                    <Container size={15} /> Discover and import services
+                  </button>
                   <p>
                     Set <code>DOCKER_SOCKET=/var/run/docker.sock</code> and
                     mount the socket in your container. The dashboard only reads

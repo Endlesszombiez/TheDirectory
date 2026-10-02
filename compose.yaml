@@ -11,6 +11,8 @@ services:
       DASHBOARD_USERNAME: ${DASHBOARD_USERNAME:-}
       DASHBOARD_PASSWORD: ${DASHBOARD_PASSWORD:-}
       APP_ORIGIN: ${APP_ORIGIN:-http://localhost:4321}
-      # Optional: DOCKER_SOCKET=/var/run/docker.sock (see README security notes).
+      DOCKER_API_URL: ${DOCKER_API_URL:-}
+      # Optional Docker discovery: add a socket mount or DOCKER_API_URL in an override.
+      # See README for restricted proxy, socket permissions, and Swarm setup.
 volumes:
   directory-data:

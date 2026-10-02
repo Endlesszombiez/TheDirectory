@@ -29,6 +29,7 @@ const message = Astro.url.searchParams.get('message');
         <nav class="account-nav" aria-label="Account navigation">
           <a href="/">Dashboard</a>
           <a href="/account">My account</a>
+          <a href="/ai">AI settings</a>
           {user.role === 'admin' && <a href="/users">Manage users</a>}
           <form method="post" action="/api/auth/logout">
             <button class="button">Sign out</button>

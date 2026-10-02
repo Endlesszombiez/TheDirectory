@@ -24,6 +24,8 @@ async function start(directory: string, extra: Record<string, string> = {}) {
       DASHBOARD_USERNAME: 'tester',
       DASHBOARD_PASSWORD: 'integration-password',
       APP_ORIGIN: origin,
+      DOCKER_SOCKET: '',
+      DOCKER_API_URL: '',
       ...extra,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -84,6 +86,13 @@ test('production server enforces session auth, viewer restrictions, revocation, 
     assert.equal((await request('/')).status, 302);
     assert.equal((await request('/api/config')).status, 401);
     assert.equal((await request('/api/status')).status, 401);
+    for (const path of [
+      '/api/discovery',
+      '/api/ai/connections',
+      '/api/ai/models',
+      '/api/ai/helper',
+    ])
+      assert.equal((await request(path)).status, 401);
     const loginPage = await request('/login');
     assert.equal(loginPage.status, 200);
     assert.equal(loginPage.headers.get('referrer-policy'), 'same-origin');
@@ -120,6 +129,88 @@ test('production server enforces session auth, viewer restrictions, revocation, 
     let admin = cookieFrom(signedIn);
     assert.equal((await request('/', admin)).status, 200);
     const config = await (await request('/api/config', admin)).json();
+    assert.equal((await request('/ai', admin)).status, 200);
+    assert.deepEqual(
+      await (await request('/api/ai/connections', admin)).json(),
+      { accounts: [] },
+    );
+    const helper = await request('/api/ai/helper', admin);
+    assert.equal(helper.status, 200);
+    assert.match(
+      helper.headers.get('content-disposition')!,
+      /directory-chatgpt\.mjs/,
+    );
+    assert.match(await helper.text(), /Continue with ChatGPT/);
+    assert.equal((await request('/api/ai/models', admin)).status, 400);
+    assert.equal((await request('/api/discovery', admin)).status, 503);
+    const aiPost = (
+      path: string,
+      body: unknown,
+      cookie: string,
+      requestOrigin = origin,
+    ) =>
+      request(path, cookie, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Origin: requestOrigin },
+        body: JSON.stringify(body),
+      });
+    assert.equal(
+      (
+        await aiPost(
+          '/api/ai/connections',
+          { action: 'import', credentials: {} },
+          admin,
+        )
+      ).status,
+      400,
+    );
+    assert.equal(
+      (
+        await aiPost(
+          '/api/ai/connections',
+          { action: 'import', credentials: {} },
+          admin,
+          'https://untrusted.example',
+        )
+      ).status,
+      403,
+    );
+    assert.equal(
+      (
+        await aiPost(
+          '/api/ai/plan',
+          { model: 'fake-model', prompt: 'Arrange', revision: config.revision },
+          admin,
+        )
+      ).status,
+      400,
+    );
+    assert.equal(
+      (
+        await aiPost(
+          '/api/ai/plan',
+          {
+            model: 'fake-model',
+            prompt: 'Arrange',
+            revision: config.revision + 1,
+          },
+          admin,
+        )
+      ).status,
+      409,
+    );
+    assert.equal(
+      (
+        await aiPost(
+          '/api/ai/plan',
+          { model: 'fake-model', prompt: 'Arrange', revision: config.revision },
+          admin,
+          'https://untrusted.example',
+        )
+      ).status,
+      403,
+    );
+
     const save = (body: unknown, cookie: string, requestOrigin?: string) =>
       request('/api/config', cookie, {
         method: 'PUT',
@@ -167,6 +258,24 @@ test('production server enforces session auth, viewer restrictions, revocation, 
     assert.doesNotMatch(viewerHtml, />Create a board</);
     assert.equal((await request('/api/users', viewer)).status, 403);
     assert.equal((await request('/users', viewer)).status, 403);
+    assert.equal((await request('/api/discovery', viewer)).status, 403);
+    assert.equal((await request('/ai', viewer)).status, 200);
+    assert.deepEqual(
+      await (await request('/api/ai/connections', viewer)).json(),
+      { accounts: [] },
+    );
+    assert.equal(
+      (
+        await aiPost(
+          '/api/ai/plan',
+          { model: 'fake-model', prompt: 'Arrange', revision: config.revision },
+          viewer,
+        )
+      ).status,
+      403,
+    );
+    assert.doesNotMatch(viewerHtml, />Set up dashboard</);
+
     for (const path of ['/users/', '/%75sers', '/api/users/', '/api/%75sers'])
       assert.equal((await request(path, viewer)).status, 403);
     for (const path of ['/api/config/', '/api/%63onfig'])

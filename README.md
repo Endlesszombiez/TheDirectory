@@ -258,6 +258,8 @@ For a custom data directory, set `DATA_DIR`. Local development defaults to `./da
 - Custom welcome subtitle, compact cards, remote background images, and an advanced custom CSS editor. Custom CSS is shared with all dashboard users; grant editing privileges only to trusted people.
 - Search with Ctrl/Cmd+K, keyboard-accessible dialogs, and mobile navigation.
 - Local clock, server OS metrics, optional Docker container list, and board-specific notes.
+- Docker/Compose and Swarm service discovery with editable URL suggestions, selection, and duplicate-safe bulk import.
+- Optional per-user ChatGPT plan connections and prompt-based dashboard setup with preview and explicit Apply.
 - Opt-in server-side service health checks with latency, a 3.5-second timeout, bounded concurrency, and a 30-second cache. Checks run while a dashboard client is polling; this is not a historical uptime monitor. 2xx/3xx and authentication-required 401/403 responses count as reachable; redirects are not followed and TLS certificates are validated.
 - Validated configuration import/export, atomic JSON writes, and revision checks to prevent tabs overwriting each other's changes. Reload if another tab saves first.
 - Required session login, administrator/viewer roles, account management, session revocation, password changes, login throttling, same-origin mutation checks, and a public container health endpoint.
@@ -281,7 +283,50 @@ services:
 
 Set `DOCKER_GID` to the socket's owning group ID (`stat -c '%g' /var/run/docker.sock`). The container runs as the unprivileged `node` user. The Docker widget supports Unix sockets; native Windows named pipes are not supported.
 
-A read-only filesystem mount does **not** make the Docker API read-only. Access to the daemon socket grants powerful host permissions even though this application only issues a list request. For hardened installations, use a restricted socket proxy exposing only the required GET route via a Unix socket, or leave this integration disabled. Container start/stop/delete controls are intentionally absent from the current integration.
+A read-only filesystem mount does **not** make the Docker API read-only. Access to the daemon socket grants powerful host permissions even though this application only issues a list request. For hardened installations, use a restricted socket proxy exposing only the required GET routes. Set `DOCKER_API_URL=http://socket-proxy:2375` (or an HTTPS origin) in `.env` or a Compose override to use a proxy on a private Docker network instead of mounting the socket. Allow `GET /containers/json` and, only for Swarm discovery, `GET /services`. Do not expose the proxy publicly. `DOCKER_API_URL` takes precedence over `DOCKER_SOCKET`. Container start/stop/delete controls are intentionally absent from the current integration.
+
+### Discover and import services
+
+Administrators can open **Set up dashboard → Discover services**, choose **Containers / Compose** or **Swarm services**, enter the Docker host address reachable from their browser (for example `http://nas.home`), and choose a destination board. The host address is used to suggest browser links; it does not change the backend Docker connection.
+
+Review suggested names, groups, and URLs, select services, and click **Import selected**. Existing URLs on the destination board are skipped. Health checks start disabled. A container without a published web port or explicit URL stays editable until you provide a browser URL; database and worker ports are not assumed to speak HTTP. Loopback-bound ports on a remote host require a reachable reverse-proxy URL. Discovery lists one connected Docker daemon; Swarm discovery requires a manager endpoint and lists its cluster services. Separate Docker hosts require separate deployments/connections; this release configures one endpoint per installation.
+
+For reliable detection, set optional labels on your containers (or `deploy.labels` on Swarm services):
+
+```yaml
+labels:
+  directory.name: Jellyfin
+  directory.url: https://jellyfin.example.com
+  directory.group: Media
+  directory.icon: film
+  directory.color: purple
+  directory.description: Movies and TV
+```
+
+`directory.url` takes priority over a simple Traefik `Host(...)` rule and published-port inference. Compound Traefik routing needs an explicit URL. Set `directory.enable: 'false'` to exclude a service. Only display metadata and candidate URLs are returned to the discovery UI; other labels and container environment variables are excluded.
+
+## Optional AI dashboard setup
+
+AI is optional. Discovery and manual editing work without an AI connection, and this application does not provide a shared AI billing account or silently fall back to API-key billing.
+
+### Connect your own ChatGPT plan
+
+1. Open **AI settings** from the sidebar or **My account**.
+2. Download the sign-in helper and run `node directory-chatgpt.mjs` on the computer running your browser. You need Node.js 22 or later there. Repository users can run `npm run connect-chatgpt` instead; the helper has no npm dependencies.
+3. Open the local address printed by the helper, choose **Continue with ChatGPT**, and grant **Use your ChatGPT plan**. Eligibility and usage limits are controlled by OpenAI; eligible Plus/Pro accounts can share their existing allowance.
+4. Import the protected JSON connection file whose path appears in the terminal into **AI settings** on your own dashboard, over HTTPS or localhost.
+
+The helper follows OpenAI's [open-source OAuth flow](https://developers.openai.com/siwc/token-sharing-open-source/sign-in), with a `127.0.0.1` callback, PKCE, state/nonce validation, and signed ID/access-token verification. For remote Docker installations it follows the documented [self-hosted credential-transfer approach](https://developers.openai.com/siwc/token-sharing-open-source/self-hosted-vms); a remote webpage cannot receive a callback addressed to the user's local computer. No partner client secret or operator API key is needed for this open-source flow. Availability remains subject to OpenAI's preview rollout and account/workspace policies.
+
+Use `node directory-chatgpt.mjs --profile another-account` (or `npm run connect-chatgpt -- --profile another-account`) for another account/workspace. Rerun a profile to reconnect its existing registration. The helper keeps its own stable local host identifier and saved registration under `~/.config/thedirectory/`. The server keeps a separate stable host identifier when importing credentials. Transferred sessions currently do not provide host-specific usage attribution/revocation. Each dashboard user can save up to ten registrations, select an active account, and disconnect it. Identity sign-in without plan permission is shown as disabled for AI usage.
+
+Connection files contain private tokens. Keep them out of source control, browser storage, logs, and support transcripts. The helper writes with owner-only permissions on Unix; protect the file with your account's filesystem permissions on Windows. Once imported, let the dashboard own refreshes; do not reuse the same credential session in another running app. Server connections are encrypted in `DATA_DIR/ai-connections.json` with a local `DATA_DIR/ai.key`; protect and back up both files together. Encryption does not protect credentials from someone who can read the key and the data directory. These files are excluded from dashboard exports. Disconnect attempts remote session revocation, clears local tokens, and reports when remote revocation could not be confirmed; you can also disconnect the app in ChatGPT Settings.
+
+### Describe, preview, apply
+
+After importing real services, administrators can open **Set up dashboard → Set up with AI**, choose a model available to their connected ChatGPT account, and describe the desired boards, groups, names, icons, theme, and layout. The request sends their prompt and dashboard display metadata, including service URLs with credentials, query strings, and fragments removed, to OpenAI. Board notes, custom CSS, background URLs, and credentials are excluded from the prompt. Requests use the selected user's ChatGPT plan limits; manage app limits in [ChatGPT Settings → Usage](https://chatgpt.com/settings/usage).
+
+The proposal appears for review and is saved only after **Apply setup**. Validation requires every existing service exactly once and preserves its URL and health-check setting, as well as existing board notes, custom CSS, background, and configuration revision. Invalid, incomplete, or usage-limited responses leave the dashboard unchanged. New services must first be imported or added manually; AI cannot invent endpoints. Viewers can manage their own connections but cannot generate or apply dashboard changes.
 
 ## Customizing the frontend
 
@@ -290,7 +335,11 @@ A read-only filesystem mount does **not** make the Docker API read-only. Access 
 - `src/lib/schema.ts`: validated configuration contract.
 - `src/lib/defaults.ts`: first-run boards and starter services.
 - `src/lib/store.ts`: file persistence and concurrent-save protection.
-- `src/lib/monitor.ts`: service checks, OS information, and Docker adapter.
+- `src/lib/monitor.ts`: service checks and OS information.
+- `src/lib/docker.ts`, `discovery.ts`, `dashboard-setup.ts`: Docker transport, discovery, and bulk import.
+- `src/lib/ai-connections.ts`, `ai.ts`: protected per-user connections and validated AI proposals.
+- `src/components/DashboardSetup.tsx`, `AIConnections.tsx`: setup preview and connection interfaces.
+- `scripts/connect-chatgpt.mjs`: portable local OAuth sign-in helper.
 - `src/pages/api/`: configuration and status endpoints.
 - `src/middleware.ts`: authentication, authorization, origin checks and security headers.
 - `src/lib/auth.ts`: password hashing, account persistence, session validation and revocation.
@@ -303,6 +352,6 @@ Health checks intentionally reach private-network URLs so the app can monitor a 
 
 ## Scope and next integrations
 
-This is a functional initial release, not full Homarr feature parity. Proxmox, Home Assistant, media, *arr, and other starter cards currently open their apps; they do not yet fetch those apps' APIs. Provider-specific API widgets, per-board permissions, SSO/MFA, drag-and-drop resizing, custom uploaded images/backgrounds, weather, secrets management, historical metrics, and localization remain future work. Prefer server-side provider adapters and keep credentials out of exported configuration when adding integrations.
+This is a functional initial release, not full Homarr feature parity. Proxmox, Home Assistant, media, *arr, and other starter cards currently open their apps; they do not yet fetch those apps' APIs. Provider-specific API widgets, per-board permissions, SSO/MFA, drag-and-drop resizing, custom uploaded images/backgrounds, weather, additional provider secret storage, historical metrics, and localization remain future work. Prefer server-side provider adapters and keep credentials out of exported configuration when adding integrations.
 
 The repository includes build and runtime tests. After building, run `npm run test:integration` to verify the production server's authentication, origin checks, configuration validation, and save API. GitHub Actions also builds and smoke-tests the Docker image. Docker image execution must be verified on a machine with Docker installed.

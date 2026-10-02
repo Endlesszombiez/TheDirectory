@@ -9,6 +9,7 @@
     "start": "node --env-file-if-exists=.env ./dist/server/entry.mjs",
     "test": "tsx --test tests/*.test.ts",
     "test:integration": "tsx --test tests/*.integration.ts",
+    "connect-chatgpt": "node scripts/connect-chatgpt.mjs",
     "reset-admin": "node --env-file-if-exists=.env scripts/reset-admin.mjs",
     "format": "prettier --write src tests scripts package.json tsconfig.json astro.config.mjs .prettierrc.json README.md compose.yaml .github/workflows/ci.yaml"
   },

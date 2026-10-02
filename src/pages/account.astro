@@ -8,6 +8,11 @@ const user = Astro.locals.user!;
     Signed in as <strong>{user.username}</strong> ·{' '}
     {user.role === 'admin' ? 'Administrator' : 'Viewer'}
   </p>
+  <p class="account-intro">
+    <a class="button" href="/ai">
+      Manage your ChatGPT connection
+    </a>
+  </p>
   <h2>Change password</h2>
   <form method="post" action="/api/auth/password" class="account-form">
     <label>
