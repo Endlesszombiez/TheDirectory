@@ -1,6 +1,12 @@
 # The Directory
 
-A self-hosted homelab homepage built with Astro, React, and TypeScript. Inspired by Homarr's dashboard concept, with an original interface and no dependency on Homarr code or assets.
+A self-hosted homelab homepage built with Astro, React, and TypeScript. Inspired by Homarr's dashboard concept, with an original interface. Popular service logos are bundled from the separately licensed dashboard-icons collection (see public/service-icons/LICENSE).
+
+## Service cards
+
+Use **Add service** to set a local destination (such as `http://10.0.0.3:8096`), a web destination (such as `https://media.example.com`), or both. Each card shows a server link for local access and a cloud link for web access. The card title favors the local link when the dashboard is opened through a private IP, localhost, or a local hostname; otherwise it favors the web link. Either link remains directly accessible. This uses the dashboard hostname, not network reachability; a public domain accessed from your LAN will favor the web link.
+
+Automatic icons use bundled logos for popular services, then the selected destination's `/favicon.ico`, then a generic symbol if the image is unavailable. You can provide a custom image URL or choose a generic icon. Health checks use the local destination when present, otherwise the web destination. Existing single-URL cards continue working.
 
 ## Run in Docker
 

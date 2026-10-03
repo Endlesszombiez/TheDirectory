@@ -1,3 +1,4 @@
+import { serviceDestinations } from '../lib/service-links';
 import { useEffect, useRef, useState } from 'react';
 import {
   Container,
@@ -54,7 +55,11 @@ export default function DashboardSetup({
   const targetBoard =
     config.boards.find((b) => b.id === target) || config.boards[0];
   const existingUrls = new Set(
-    targetBoard.services.map((s) => normalizedServiceUrl(s.url)),
+    targetBoard.services.flatMap((s) =>
+      Object.values(serviceDestinations(s))
+        .filter(Boolean)
+        .map(normalizedServiceUrl),
+    ),
   );
   const duplicate = (s: DiscoveredService) => {
     try {

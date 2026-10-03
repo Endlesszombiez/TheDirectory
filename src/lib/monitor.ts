@@ -1,6 +1,7 @@
 import { dockerConfigured, listContainers } from './docker';
 import os from 'node:os';
 import type { Config } from './schema';
+import { serviceDestination } from './service-links';
 export type Health = {
   state: 'up' | 'down' | 'unchecked';
   latency?: number;
@@ -26,7 +27,8 @@ export async function checkServices(
           result[key] = { state: 'unchecked' };
           continue;
         }
-        const cached = cache.get(service.url);
+        const url = serviceDestination(service);
+        const cached = cache.get(url);
         if (cached && Date.now() - cached.at < 30_000) {
           result[key] = cached.health;
           continue;
@@ -34,7 +36,7 @@ export async function checkServices(
         const started = performance.now();
         let health: Health;
         try {
-          const response = await fetch(service.url, {
+          const response = await fetch(url, {
             signal: AbortSignal.timeout(3500),
             redirect: 'manual',
           });
@@ -52,7 +54,7 @@ export async function checkServices(
         } catch {
           health = { state: 'down' };
         }
-        cache.set(service.url, { at: Date.now(), health });
+        cache.set(url, { at: Date.now(), health });
         result[key] = health;
       }
     }),

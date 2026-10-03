@@ -41,6 +41,9 @@ test('persists configuration atomically and prevents concurrent lost updates', a
   try {
     assert.deepEqual(await readConfig(), defaultConfig);
     const next = { ...structuredClone(defaultConfig), title: 'My test lab' };
+    next.boards[0].services[0].localUrl = 'http://10.0.0.3:8006';
+    next.boards[0].services[0].webUrl = 'https://proxmox.example.com';
+    next.boards[0].services[0].iconUrl = 'https://example.com/icon.png';
     const results = await Promise.allSettled([
       saveConfig(next),
       saveConfig(next),
@@ -55,6 +58,7 @@ test('persists configuration atomically and prevents concurrent lost updates', a
     const saved = await readConfig();
     assert.equal(saved.title, 'My test lab');
     assert.equal(saved.revision, 1);
+    assert.deepEqual(saved.boards[0].services[0], next.boards[0].services[0]);
     const raw = await readFile(join(directory, 'dashboard.json'), 'utf8');
     assert.equal(JSON.parse(raw).revision, 1);
     await saveConfig({ ...saved, theme: 'light' });

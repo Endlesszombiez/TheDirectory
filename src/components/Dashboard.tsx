@@ -1,3 +1,4 @@
+import { clientId } from '../lib/client-id';
 import { useEffect, useRef, useState, type SubmitEvent } from 'react';
 import {
   Activity,
@@ -35,6 +36,12 @@ import { type Config, type Service } from '../lib/schema';
 import type { PublicUser } from '../lib/auth';
 import DashboardSetup from './DashboardSetup';
 import AppSidebar from './AppSidebar';
+import ServiceIcon from './ServiceIcon';
+import {
+  isLocalHostname,
+  serviceDestinations,
+  serviceDestination,
+} from '../lib/service-links';
 import { ContainerManagerView } from './ContainerManagers';
 import type { ContainerManager } from '../lib/container-managers';
 
@@ -80,10 +87,14 @@ type Status = {
   checkedAt: string;
 };
 const blankService = (): Service => ({
-  id: crypto.randomUUID(),
+  id: clientId(),
   name: '',
   description: '',
-  url: 'http://',
+  url: '',
+  localUrl: '',
+  webUrl: '',
+  iconMode: 'auto',
+  iconUrl: '',
   icon: 'globe',
   color: 'mint',
   group: 'Infrastructure',
@@ -106,6 +117,7 @@ export default function Dashboard({
   const [config, setConfig] = useState(initialConfig);
   const [boardId, setBoardId] = useState(initialConfig.boards[0].id);
   const [query, setQuery] = useState('');
+  const [localAccess, setLocalAccess] = useState(false);
   const [editing, setEditing] = useState(false);
   const [setup, setSetup] = useState(false);
   const [service, setService] = useState<Service | null>(null);
@@ -151,6 +163,7 @@ export default function Dashboard({
     }
   }
   useEffect(() => {
+    setLocalAccess(isLocalHostname(window.location.hostname));
     const params = new URLSearchParams(window.location.search);
     const requestedBoard = params.get('board');
     if (initialConfig.boards.some((b) => b.id === requestedBoard))
@@ -274,13 +287,24 @@ export default function Dashboard({
   async function saveService(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!service) return;
+    const destinations = serviceDestinations(service);
+    if (!destinations.local && !destinations.web) {
+      setError('Add a local or web destination.');
+      return;
+    }
+    const savedService = {
+      ...service,
+      url: destinations.local || destinations.web,
+    };
     const exists = board.services.some((s) => s.id === service.id);
     if (
       await persist(
         updateBoard(
           exists
-            ? board.services.map((s) => (s.id === service.id ? service : s))
-            : [...board.services, service],
+            ? board.services.map((s) =>
+                s.id === service.id ? savedService : s,
+              )
+            : [...board.services, savedService],
         ),
       )
     )
@@ -398,7 +422,6 @@ export default function Dashboard({
               <div className="page-heading">
                 <div>
                   <h1>{board.name}</h1>
-                  {config.subtitle && <p>{config.subtitle}</p>}
                 </div>
                 <div className="heading-actions">
                   {canEdit ? (
@@ -416,7 +439,10 @@ export default function Dashboard({
                       </button>
                       <button
                         className="button primary"
-                        onClick={() => setService(blankService())}
+                        onClick={() => {
+                          setError('');
+                          setService(blankService());
+                        }}
                       >
                         <Plus size={17} />
                         Add service
@@ -506,7 +532,9 @@ export default function Dashboard({
                         className="button"
                         disabled={!query && !canEdit}
                         onClick={() =>
-                          query ? setQuery('') : setService(blankService())
+                          query
+                            ? setQuery('')
+                            : (setError(''), setService(blankService()))
                         }
                       >
                         {query ? 'Clear search' : 'Add service'}
@@ -529,6 +557,7 @@ export default function Dashboard({
                           .filter((s) => s.group === group)
                           .map((s) => {
                             const Icon = icons[s.icon];
+                            const destinations = serviceDestinations(s);
                             const health =
                               status?.services[`${board.id}:${s.id}`];
                             return (
@@ -569,14 +598,16 @@ export default function Dashboard({
                                 <a
                                   className="service-link"
                                   draggable={false}
-                                  href={s.url}
+                                  href={serviceDestination(s, localAccess)}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                 >
                                   <div className="card-top">
-                                    <span className={`service-icon ${s.color}`}>
-                                      <Icon size={24} />
-                                    </span>
+                                    <ServiceIcon
+                                      service={s}
+                                      local={localAccess}
+                                      fallback={<Icon size={24} />}
+                                    />
                                     <ArrowUpRight
                                       className="external-arrow"
                                       size={16}
@@ -584,38 +615,72 @@ export default function Dashboard({
                                   </div>
                                   <h4>{s.name}</h4>
                                   {s.description && <p>{s.description}</p>}
-                                  <div className="card-footer">
-                                    <span className="service-host">
-                                      {new URL(s.url).host}
-                                    </span>
-                                    {s.check && (
-                                      <span
-                                        className={`service-status ${health?.state || 'pending'}`}
-                                        title={
-                                          health?.latency !== undefined
-                                            ? `${health.latency} ms`
-                                            : undefined
-                                        }
+                                </a>
+                                <div className="card-footer">
+                                  <div className="service-destinations">
+                                    {destinations.local && (
+                                      <a
+                                        href={destinations.local}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        title={destinations.local}
+                                        aria-label={`Open ${s.name} locally`}
                                       >
-                                        <span className="dot" />
-                                        {!health
-                                          ? 'Checking'
-                                          : health.state === 'up'
-                                            ? 'Online'
-                                            : health.state === 'down'
-                                              ? 'Offline'
-                                              : 'Unchecked'}
-                                      </span>
+                                        <Server size={13} />
+                                        <span>
+                                          {new URL(destinations.local).host}
+                                        </span>
+                                      </a>
+                                    )}
+                                    {destinations.web && (
+                                      <a
+                                        href={destinations.web}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        title={destinations.web}
+                                        aria-label={`Open ${s.name} on the web`}
+                                      >
+                                        <Cloud size={13} />
+                                        <span>
+                                          {new URL(destinations.web).host}
+                                        </span>
+                                      </a>
                                     )}
                                   </div>
-                                </a>
+                                  {s.check && (
+                                    <span
+                                      className={`service-status ${health?.state || 'pending'}`}
+                                      title={
+                                        health?.latency !== undefined
+                                          ? `${health.latency} ms`
+                                          : undefined
+                                      }
+                                    >
+                                      <span className="dot" />
+                                      {!health
+                                        ? 'Checking'
+                                        : health.state === 'up'
+                                          ? 'Online'
+                                          : health.state === 'down'
+                                            ? 'Offline'
+                                            : 'Unchecked'}
+                                    </span>
+                                  )}
+                                </div>
                                 {editing && (
                                   <div className="card-edit">
                                     <button
                                       aria-label={`Edit ${s.name}`}
                                       title={`Edit ${s.name}`}
                                       disabled={saving}
-                                      onClick={() => setService({ ...s })}
+                                      onClick={() => {
+                                        setError('');
+                                        setService({
+                                          ...s,
+                                          localUrl: destinations.local,
+                                          webUrl: destinations.web,
+                                        });
+                                      }}
                                     >
                                       <Pencil size={14} />
                                     </button>
@@ -952,19 +1017,42 @@ export default function Dashboard({
                   placeholder="Optional description"
                 />
               </label>
-              <label>
-                Service URL
-                <input
-                  required
-                  type="url"
-                  pattern="https?://.*"
-                  value={service.url}
-                  onChange={(e) =>
-                    setService({ ...service, url: e.target.value })
-                  }
-                  placeholder="http://192.168.1.10:8096"
-                />
-              </label>
+              <div className="form-row">
+                <label>
+                  <span className="destination-label">
+                    <Server size={14} /> Local destination
+                  </span>
+                  <input
+                    type="url"
+                    pattern="https?://.*"
+                    maxLength={2048}
+                    value={service.localUrl || ''}
+                    onChange={(e) =>
+                      setService({ ...service, localUrl: e.target.value })
+                    }
+                    placeholder="http://10.0.0.3:8096"
+                  />
+                </label>
+                <label>
+                  <span className="destination-label">
+                    <Cloud size={14} /> Web destination
+                  </span>
+                  <input
+                    type="url"
+                    pattern="https?://.*"
+                    maxLength={2048}
+                    value={service.webUrl || ''}
+                    onChange={(e) =>
+                      setService({ ...service, webUrl: e.target.value })
+                    }
+                    placeholder="https://www.service.com"
+                  />
+                </label>
+              </div>
+              <p className="field-help">
+                Add either destination or both. Local access favors the server
+                link; public access favors the cloud link.
+              </p>
               <label>
                 Category
                 <input
@@ -986,14 +1074,21 @@ export default function Dashboard({
                 <label>
                   Icon
                   <select
-                    value={service.icon}
+                    value={
+                      service.iconMode === 'manual' ? service.icon : 'auto'
+                    }
                     onChange={(e) =>
                       setService({
                         ...service,
-                        icon: e.target.value as Service['icon'],
+                        iconMode: e.target.value === 'auto' ? 'auto' : 'manual',
+                        icon:
+                          e.target.value === 'auto'
+                            ? service.icon
+                            : (e.target.value as Service['icon']),
                       })
                     }
                   >
+                    <option value="auto">Automatic (logo / favicon)</option>
                     {Object.keys(icons).map((icon) => (
                       <option key={icon}>{icon}</option>
                     ))}
@@ -1018,6 +1113,25 @@ export default function Dashboard({
                   </select>
                 </label>
               </div>
+              {service.iconMode !== 'manual' && (
+                <label>
+                  Custom icon URL
+                  <input
+                    type="url"
+                    pattern="https?://.*"
+                    maxLength={2048}
+                    value={service.iconUrl || ''}
+                    onChange={(e) =>
+                      setService({ ...service, iconUrl: e.target.value })
+                    }
+                    placeholder="Optional HTTPS image URL"
+                  />
+                  <small className="field-help">
+                    Leave blank to use a bundled service logo or the destination
+                    favicon.
+                  </small>
+                </label>
+              )}
               <label className="checkbox-label">
                 <input
                   type="checkbox"
@@ -1029,7 +1143,8 @@ export default function Dashboard({
                 <span>
                   Check service health
                   <small>
-                    The server checks this URL every 30 seconds while the
+                    The server checks the local destination (or web destination
+                    if no local link is set) every 30 seconds while the
                     dashboard is open.
                   </small>
                 </span>

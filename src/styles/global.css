@@ -1440,3 +1440,51 @@ h1 {
 .sidebar > astro-island {
   display: contents;
 }
+
+.service-icon img {
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+}
+.service-card > .card-footer {
+  margin: 0 16px 14px;
+}
+.service-destinations {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+}
+.service-destinations a {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  min-width: 0;
+}
+.service-destinations a:hover {
+  color: var(--accent);
+}
+.service-destinations a span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.service-destinations svg {
+  flex-shrink: 0;
+}
+.destination-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.field-help {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 0 0 14px;
+}
+.compact .service-icon img {
+  width: 22px;
+  height: 22px;
+}

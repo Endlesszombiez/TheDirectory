@@ -4,7 +4,6 @@ import {
   LayoutDashboard,
   Plus,
   Settings2,
-  ShieldCheck,
   Container,
 } from 'lucide-react';
 import type { Config } from '../lib/schema';
@@ -49,10 +48,6 @@ export default function AppSidebar({
           the directory<span className="brand-period">.</span>
         </span>
       </a>
-      <div className="sidebar-workspace">
-        <span className="dot" />
-        {config.title}
-      </div>
       <div className="nav-label">BOARDS</div>
       <nav aria-label="Boards">
         {config.boards.map((board) => {
@@ -130,10 +125,6 @@ export default function AppSidebar({
           <Settings2 size={18} />
           <span>Settings</span>
         </a>
-        <div className="sidebar-security">
-          <ShieldCheck size={14} />
-          <span>Private workspace</span>
-        </div>
         <a className="profile" href="/account">
           <span className="avatar">
             {user.username.slice(0, 2).toUpperCase()}

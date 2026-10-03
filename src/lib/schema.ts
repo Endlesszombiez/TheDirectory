@@ -8,6 +8,37 @@ export const serviceSchema = z.object({
     .url()
     .max(2048)
     .refine((v) => /^https?:\/\//i.test(v), 'Use an HTTP or HTTPS URL'),
+  localUrl: z
+    .union([
+      z.literal(''),
+      z
+        .url()
+        .max(2048)
+        .refine((v) => /^https?:\/\//i.test(v), 'Use an HTTP or HTTPS URL'),
+    ])
+    .optional(),
+  webUrl: z
+    .union([
+      z.literal(''),
+      z
+        .url()
+        .max(2048)
+        .refine((v) => /^https?:\/\//i.test(v), 'Use an HTTP or HTTPS URL'),
+    ])
+    .optional(),
+  iconMode: z.enum(['auto', 'manual']).optional(),
+  iconUrl: z
+    .union([
+      z.literal(''),
+      z
+        .url()
+        .max(2048)
+        .refine(
+          (v) => /^https?:\/\//i.test(v),
+          'Use an HTTP or HTTPS image URL',
+        ),
+    ])
+    .optional(),
   icon: z.enum([
     'server',
     'film',
@@ -40,10 +71,7 @@ export const configSchema = z
     theme: z.enum(['dark', 'light']),
     accent: z.enum(['mint', 'blue', 'purple', 'orange']),
     columns: z.number().int().min(2).max(4),
-    subtitle: z
-      .string()
-      .max(160)
-      .default('Everything you need, right where you left it.'),
+    subtitle: z.string().max(160).default(''),
     compact: z.boolean().default(false),
     backgroundUrl: z
       .union([
@@ -66,6 +94,24 @@ export const configSchema = z
     if (new Set(ids).size !== ids.length)
       ctx.addIssue({ code: 'custom', message: 'Board IDs must be unique' });
     for (const board of value.boards) {
+      for (const service of board.services) {
+        if (
+          (service.localUrl !== undefined || service.webUrl !== undefined) &&
+          !service.localUrl &&
+          !service.webUrl
+        )
+          ctx.addIssue({
+            code: 'custom',
+            message: 'Add a local or web destination',
+            path: [
+              'boards',
+              value.boards.indexOf(board),
+              'services',
+              board.services.indexOf(service),
+              'localUrl',
+            ],
+          });
+      }
       if (
         new Set(board.services.map((s) => s.id)).size !== board.services.length
       )

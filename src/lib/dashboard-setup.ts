@@ -1,3 +1,5 @@
+import { clientId } from './client-id';
+import { serviceDestinations } from './service-links';
 import {
   configSchema,
   serviceSchema,
@@ -17,7 +19,13 @@ export function importDiscoveredServices(
 ) {
   const board = config.boards.find((b) => b.id === boardId);
   if (!board) throw new Error('Choose a board that still exists.');
-  const urls = new Set(board.services.map((s) => normalizedServiceUrl(s.url)));
+  const urls = new Set(
+    board.services.flatMap((s) =>
+      Object.values(serviceDestinations(s))
+        .filter(Boolean)
+        .map(normalizedServiceUrl),
+    ),
+  );
   const ids = new Set(board.services.map((s) => s.id));
   const added: Service[] = [];
   for (const candidate of services) {
@@ -28,7 +36,7 @@ export function importDiscoveredServices(
     const normalized = normalizedServiceUrl(service.url);
     if (urls.has(normalized)) continue;
     urls.add(normalized);
-    if (ids.has(service.id)) service.id = crypto.randomUUID();
+    if (ids.has(service.id)) service.id = clientId();
     ids.add(service.id);
     added.push(service);
   }

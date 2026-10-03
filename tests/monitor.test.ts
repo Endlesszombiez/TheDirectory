@@ -21,6 +21,11 @@ test('checks real HTTP services, recognizes authenticated endpoints, and skips d
       .map((s, i) => ({
         ...s,
         url: `${base}/${['ok', 'auth', 'broken', 'skip'][i]}`,
+        ...(i === 0
+          ? { localUrl: `${base}/ok`, webUrl: `${base}/broken` }
+          : i === 1
+            ? { localUrl: '', webUrl: `${base}/auth` }
+            : {}),
         check: i !== 3,
       }));
     const status = await checkServices(config);

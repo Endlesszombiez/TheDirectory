@@ -1,3 +1,4 @@
+import { clientId } from '../lib/client-id';
 import { useEffect, useRef, useState } from 'react';
 import { Download, Upload, Plus, Trash2 } from 'lucide-react';
 import { configSchema, type Config } from '../lib/schema';
@@ -275,7 +276,7 @@ export default function DashboardSettings({
               onSubmit={async (e) => {
                 e.preventDefault();
                 if (!newBoard.trim()) return;
-                const id = crypto.randomUUID();
+                const id = clientId();
                 if (
                   await persist({
                     ...config,

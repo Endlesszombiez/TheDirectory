@@ -24,7 +24,7 @@ export const defaultConfig: Config = {
   theme: 'dark',
   accent: 'mint',
   columns: 3,
-  subtitle: 'Your self-hosted services.',
+  subtitle: '',
   compact: false,
   backgroundUrl: '',
   customCss: '',
