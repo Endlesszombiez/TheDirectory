@@ -266,6 +266,25 @@ For a custom data directory, set `DATA_DIR`. Local development defaults to `./da
 
 Starter cards are examples using `.home` addresses. Edit their URLs before using them. Health monitoring is disabled until explicitly enabled. System metrics describe the OS visible to Node and can differ from container resource limits. Docker stats are live when configured; no synthetic operational numbers are shown.
 
+## Embedded Portainer and Dockhand
+
+The sidebar includes **Portainer** and **Dockhand** under **Container managers**. Each entry is disabled until its URL is configured; select the adjacent information button for setup instructions. Either or both can be enabled independently.
+
+Set the desired variables in your server environment or `.env` file:
+
+```dotenv
+PORTAINER_HOME_URL=http://localhost:3333
+DOCKHAND_HOME_URL=http://localhost:3000
+```
+
+Use full HTTP(S) URLs without embedded credentials. Invalid values keep the corresponding entry disabled with configuration guidance. These URLs are sent to signed-in users' browsers; they must not contain secrets. Restart the local server after changes. For the supplied Docker Compose deployment, apply changes with `docker compose up -d directory`; Compose passes both variables into the container without rebuilding the image. If running with `docker run`, supply them using `-e`.
+
+Select an enabled entry to open its interface inside TheDirectory while keeping the sidebar and top navigation. Select a board to return to the dashboard. The embedded view includes **Reload**, **Open in new tab**, and troubleshooting information.
+
+The URL must be reachable from the **browser**, not just the app container. `localhost` and `127.0.0.1` refer to the device running the browser; use a LAN address or hostname for remote access. Docker service names usually cannot be resolved by browsers. When TheDirectory uses HTTPS, configure an HTTPS URL for the embedded service too.
+
+Portainer or Dockhand must permit iframe embedding from TheDirectory's origin. Their `X-Frame-Options` or CSP `frame-ancestors` headers may block it; configure the service or its reverse proxy as needed. TheDirectory does not bypass those policies or proxy the manager. Each manager retains its own authentication and permissions; TheDirectory's viewer role does not restrict actions inside the manager. Browser cookie restrictions, login-provider frame policies, and untrusted HTTPS certificates may also affect embedded login. If the view stays blank, use its troubleshooting section or **Open in new tab**.
+
 ## Optional Docker integration
 
 The app reads `GET /containers/json?all=true` through the Unix socket named by `DOCKER_SOCKET`. On Linux, add a Compose override like:

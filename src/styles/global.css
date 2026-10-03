@@ -1533,3 +1533,105 @@ kbd {
 .sidebar {
   overflow-y: auto;
 }
+
+/* Optional embedded container managers. */
+.manager-nav-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.manager-nav-row > .nav-item {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+}
+.nav-item:disabled:hover {
+  background: none;
+  color: var(--muted);
+}
+.manager-info {
+  display: contents;
+}
+.manager-info > summary {
+  cursor: pointer;
+  display: flex;
+  padding: 10px;
+  border-radius: 7px;
+  color: var(--muted);
+}
+.manager-info > summary:hover {
+  color: var(--accent);
+}
+.manager-info > summary:focus-visible,
+.manager-troubleshooting > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.manager-help {
+  flex-basis: 100%;
+  margin: 0 0 12px;
+  padding: 12px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 11px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.manager-help p {
+  margin-top: 8px;
+}
+.manager-help > code {
+  display: block;
+  margin-top: 8px;
+}
+main.manager-main {
+  padding: 24px;
+}
+.manager-view {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.manager-toolbar,
+.manager-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.manager-toolbar {
+  justify-content: space-between;
+}
+.manager-toolbar h1 {
+  font-size: 28px;
+  margin-top: 6px;
+}
+.manager-troubleshooting {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.manager-troubleshooting summary {
+  cursor: pointer;
+}
+.manager-troubleshooting p {
+  margin-top: 8px;
+}
+.manager-frame {
+  width: 100%;
+  height: calc(100dvh - 230px);
+  min-height: 400px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+}
+@media (max-width: 700px) {
+  main.manager-main {
+    padding: 20px 12px;
+  }
+  .manager-frame {
+    height: calc(100dvh - 260px);
+  }
+}

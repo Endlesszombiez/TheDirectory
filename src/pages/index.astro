@@ -1,8 +1,10 @@
 ---
 import Dashboard from '../components/Dashboard';
+import { readContainerManagers } from '../lib/container-managers';
 import { readConfig } from '../lib/store';
 import '../styles/global.css';
 const config = await readConfig();
+const containerManagers = readContainerManagers();
 ---
 
 <!doctype html>
@@ -22,6 +24,11 @@ const config = await readConfig();
     <title>{config.title} · Homelab</title>
   </head>
   <body>
-    <Dashboard initialConfig={config} user={Astro.locals.user!} client:load />
+    <Dashboard
+      initialConfig={config}
+      containerManagers={containerManagers}
+      user={Astro.locals.user!}
+      client:load
+    />
   </body>
 </html>
