@@ -84,13 +84,13 @@ test('production server enforces session auth, viewer restrictions, revocation, 
     const login = (username: string, password: string) =>
       form('/api/auth/login', { username, password });
     assert.equal((await request('/')).status, 302);
+    assert.equal((await request('/settings')).status, 302);
     assert.equal((await request('/api/config')).status, 401);
     assert.equal((await request('/api/status')).status, 401);
     for (const path of [
       '/api/discovery',
       '/api/ai/connections',
       '/api/ai/models',
-      '/api/ai/helper',
     ])
       assert.equal((await request(path)).status, 401);
     const loginPage = await request('/login');
@@ -134,13 +134,6 @@ test('production server enforces session auth, viewer restrictions, revocation, 
       await (await request('/api/ai/connections', admin)).json(),
       { accounts: [] },
     );
-    const helper = await request('/api/ai/helper', admin);
-    assert.equal(helper.status, 200);
-    assert.match(
-      helper.headers.get('content-disposition')!,
-      /directory-chatgpt\.mjs/,
-    );
-    assert.match(await helper.text(), /Continue with ChatGPT/);
     assert.equal((await request('/api/ai/models', admin)).status, 400);
     assert.equal((await request('/api/discovery', admin)).status, 503);
     const aiPost = (
@@ -230,11 +223,41 @@ test('production server enforces session auth, viewer restrictions, revocation, 
       400,
     );
     assert.equal(
-      (await save({ ...config, title: 'Integration lab' }, admin, origin))
-        .status,
+      (
+        await save(
+          {
+            ...config,
+            title: 'Integration lab',
+            theme: 'light',
+            accent: 'blue',
+          },
+          admin,
+          origin,
+        )
+      ).status,
       200,
     );
     assert.equal((await save(config, admin, origin)).status, 409);
+    // All settings surfaces and login inherit the saved dashboard palette.
+    for (const path of [
+      '/',
+      '/settings',
+      '/settings?section=boards',
+      '/settings?section=backup',
+      '/account',
+      '/ai',
+      '/users',
+      '/login',
+    ]) {
+      const response = await request(path, path === '/login' ? '' : admin);
+      assert.equal(response.status, 200, path);
+      const html = await response.text();
+      assert.match(html, /data-theme="light"/, path);
+      assert.match(html, /data-accent="blue"/, path);
+      if (path !== '/' && path !== '/login')
+        assert.match(html, /aria-label="Settings"/, path);
+    }
+
     assert.equal(
       (
         await form(
@@ -254,8 +277,8 @@ test('production server enforces session auth, viewer restrictions, revocation, 
     assert.equal((await request('/', viewer)).status, 200);
     const viewerHtml = await (await request('/', viewer)).text();
     assert.match(viewerHtml, /Viewer access/);
-    assert.doesNotMatch(viewerHtml, />Edit dashboard</);
-    assert.doesNotMatch(viewerHtml, />Create a board</);
+    assert.doesNotMatch(viewerHtml, />Edit</);
+    assert.doesNotMatch(viewerHtml, />New board</);
     assert.equal((await request('/api/users', viewer)).status, 403);
     assert.equal((await request('/users', viewer)).status, 403);
     assert.equal((await request('/api/discovery', viewer)).status, 403);
@@ -274,7 +297,13 @@ test('production server enforces session auth, viewer restrictions, revocation, 
       ).status,
       403,
     );
-    assert.doesNotMatch(viewerHtml, />Set up dashboard</);
+    assert.doesNotMatch(viewerHtml, />Discover</);
+    const viewerSettings = await request('/settings', viewer);
+    assert.equal(viewerSettings.status, 302);
+    assert.equal(viewerSettings.headers.get('location'), '/account');
+    const viewerAccount = await (await request('/account', viewer)).text();
+    assert.doesNotMatch(viewerAccount, />Appearance<|>Users<|>Backup</);
+    assert.match(viewerAccount, />Connections</);
 
     for (const path of ['/users/', '/%75sers', '/api/users/', '/api/%75sers'])
       assert.equal((await request(path, viewer)).status, 403);

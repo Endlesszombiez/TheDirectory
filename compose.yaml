@@ -11,10 +11,29 @@ services:
       DASHBOARD_USERNAME: ${DASHBOARD_USERNAME:-}
       DASHBOARD_PASSWORD: ${DASHBOARD_PASSWORD:-}
       APP_ORIGIN: ${APP_ORIGIN:-http://localhost:4321}
-      DOCKER_API_URL: ${DOCKER_API_URL:-}
+      DOCKER_API_URL: ${DOCKER_API_URL-http://docker-proxy:2375}
+      DOCKER_SOCKET: ${DOCKER_SOCKET:-}
       PORTAINER_HOME_URL: ${PORTAINER_HOME_URL:-}
       DOCKHAND_HOME_URL: ${DOCKHAND_HOME_URL:-}
-      # Optional Docker discovery: add a socket mount or DOCKER_API_URL in an override.
-      # See README for restricted proxy, socket permissions, and Swarm setup.
+    depends_on:
+      - docker-proxy
+    networks:
+      - default
+      - docker-api
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy:0.3.0
+    restart: unless-stopped
+    environment:
+      CONTAINERS: '1'
+      SERVICES: '1'
+      POST: '0'
+      LOG_LEVEL: warning
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - docker-api
+networks:
+  docker-api:
+    internal: true
 volumes:
   directory-data:

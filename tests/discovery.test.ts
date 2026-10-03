@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
-import { containerSchema } from '../src/lib/docker';
+import { containerSchema, dockerConnectionError } from '../src/lib/docker';
 import { discoverContainer, discoverServices } from '../src/lib/discovery';
 import { importDiscoveredServices } from '../src/lib/dashboard-setup';
 import { defaultConfig } from '../src/lib/defaults';
@@ -20,6 +20,29 @@ const container = (extra: Record<string, unknown> = {}) =>
     ],
     ...extra,
   });
+
+test('Docker connection failures give distinct actionable diagnostics', () => {
+  for (const [code, text] of [
+    ['ENOENT', /socket was not found/],
+    ['EACCES', /permission denied/],
+    ['EPERM', /group_add/],
+    ['ECONNREFUSED', /proxy refused/],
+    ['ENOTFOUND', /same Docker network/],
+    ['DEPTH_ZERO_SELF_SIGNED_CERT', /trusted certificate/],
+  ] as const) {
+    assert.match(
+      dockerConnectionError(Object.assign(new Error(), { code }), true).message,
+      text,
+    );
+  }
+  assert.match(
+    dockerConnectionError(
+      Object.assign(new Error(), { code: 'ECONNREFUSED' }),
+      false,
+    ).message,
+    /socket refused/,
+  );
+});
 
 test('discovery prioritizes explicit URLs, supports Traefik, and avoids non-web and inaccessible ports', () => {
   const published = discoverContainer(container(), 'https://nas.home')!;

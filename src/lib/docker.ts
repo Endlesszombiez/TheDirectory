@@ -3,6 +3,45 @@ import { request as httpsRequest } from 'node:https';
 import { z } from 'zod';
 
 export class DockerError extends Error {}
+export function dockerConnectionError(
+  error: NodeJS.ErrnoException,
+  proxy = !!process.env.DOCKER_API_URL,
+) {
+  const target = proxy ? 'Docker API proxy' : 'Docker socket';
+  if (error.code === 'EACCES' || error.code === 'EPERM')
+    return new DockerError(
+      'Docker socket permission denied. Use the supplied restricted proxy, or add the socket owning group with group_add. A read-only mount still needs socket permissions.',
+    );
+  if (error.code === 'ENOENT')
+    return new DockerError(
+      'Docker socket was not found. Mount the host socket at DOCKER_SOCKET, or use the supplied Compose Docker proxy and set DOCKER_API_URL=http://docker-proxy:2375.',
+    );
+  if (error.code === 'ECONNREFUSED')
+    return new DockerError(
+      target +
+        ' refused the connection. Start Docker and its proxy, check the endpoint, then recreate the dashboard container.',
+    );
+  if (error.code === 'ENOTFOUND' || error.code === 'EAI_AGAIN')
+    return new DockerError(
+      'Docker API proxy hostname could not be resolved. Check DOCKER_API_URL and connect the dashboard and proxy to the same Docker network.',
+    );
+  if (
+    [
+      'DEPTH_ZERO_SELF_SIGNED_CERT',
+      'SELF_SIGNED_CERT_IN_CHAIN',
+      'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+      'CERT_HAS_EXPIRED',
+      'ERR_TLS_CERT_ALTNAME_INVALID',
+    ].includes(error.code || '')
+  )
+    return new DockerError(
+      'Docker API proxy TLS certificate could not be verified. Configure a trusted certificate and matching hostname.',
+    );
+  return new DockerError(
+    target +
+      ' is unavailable. Check the server Docker connection. The Docker host address in this form only sets imported service links.',
+  );
+}
 const portSchema = z.object({
   PrivatePort: z.number().optional(),
   PublicPort: z.number().optional(),
@@ -93,11 +132,7 @@ export function dockerRead(
     );
     request.on('error', (error) =>
       reject(
-        error instanceof DockerError
-          ? error
-          : new DockerError(
-              'Docker is unavailable. Check its path, connection, and permissions.',
-            ),
+        error instanceof DockerError ? error : dockerConnectionError(error),
       ),
     );
     request.end();

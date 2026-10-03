@@ -7,36 +7,15 @@ import {
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { z } from 'zod';
-import {
-  ChatGPTError,
-  refreshCredentials,
-  revokeCredentials,
-  validateCredentials,
-} from '../../scripts/connect-chatgpt.mjs';
+import { AIError, apiModels } from './ai-provider';
 
-const credentialSchema = z.object({
-  client_id: z.string(),
-  subject: z.string(),
-  email: z.string(),
-  issuer: z.string(),
-  id_token: z.string(),
-  access_token: z.string(),
-  refresh_token: z.string(),
-  token_type: z.string(),
-  scopes: z.array(z.string()),
-  expires_at: z.number(),
-  saved_at: z.string(),
-});
 const accountSchema = z.object({
   id: z.string(),
-  clientId: z.string(),
-  subject: z.string(),
-  email: z.string(),
-  credentials: credentialSchema.nullable(),
+  label: z.string().min(1).max(80),
+  apiKey: z.string(),
 });
 const databaseSchema = z.object({
-  version: z.literal(1),
-  hostId: z.string(),
+  version: z.literal(2),
   users: z.record(
     z.string(),
     z.object({
@@ -75,10 +54,13 @@ async function readDatabase(): Promise<ConnectionDatabase> {
       decipher.update(Buffer.from(encrypted.data, 'base64')),
       decipher.final(),
     ]);
-    return databaseSchema.parse(JSON.parse(plain.toString('utf8')));
+    const value = JSON.parse(plain.toString('utf8'));
+    // OAuth registrations cannot authenticate API-key requests.
+    if (value.version === 1) return { version: 2, users: {} };
+    return databaseSchema.parse(value);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT')
-      return { version: 1, hostId: `urn:uuid:${randomUUID()}`, users: {} };
+      return { version: 2, users: {} };
     throw error;
   }
 }
@@ -122,43 +104,43 @@ export async function connectionStatus(userId: string) {
   return {
     accounts: (user?.accounts || []).map((a) => ({
       id: a.id,
-      email: a.email,
-      label: `${a.email || 'ChatGPT account'} · ${a.id.slice(0, 8)}`,
+      label: a.label,
       active: a.id === user?.activeId,
-      connected: !!a.credentials,
-      planEnabled: !!a.credentials?.scopes.includes(
-        'chatgpt.tokens.use.direct',
-      ),
+      connected: true,
     })),
   };
 }
 export async function importConnection(userId: string, value: unknown) {
-  const credentials = await validateCredentials(value);
+  const parsed = z
+    .object({
+      apiKey: z
+        .string()
+        .trim()
+        .min(20)
+        .max(512)
+        .regex(/^sk-[A-Za-z0-9_-]+$/),
+      label: z.string().trim().min(1).max(80),
+    })
+    .strict()
+    .safeParse(value);
+  if (!parsed.success)
+    throw new AIError(
+      'Enter a valid OpenAI API key and a label (up to 80 characters).',
+      400,
+    );
+  await apiModels(parsed.data.apiKey);
   await mutate((database) => {
     const user = (database.users[userId] ||= { activeId: null, accounts: [] });
-    let account = user.accounts.find(
-      (a) =>
-        a.clientId === credentials.client_id &&
-        a.subject === credentials.subject,
-    );
+    let account = user.accounts.find((a) => a.apiKey === parsed.data.apiKey);
     if (!account) {
       if (user.accounts.length >= 10)
-        throw new ChatGPTError(
-          'You can save at most 10 ChatGPT connections.',
+        throw new AIError(
+          'You can save at most 10 API keys. Remove a key first.',
           400,
         );
-      account = {
-        id: randomUUID(),
-        clientId: credentials.client_id,
-        subject: credentials.subject,
-        email: credentials.email,
-        credentials,
-      };
+      account = { id: randomUUID(), ...parsed.data };
       user.accounts.push(account);
-    } else {
-      account.credentials = credentials;
-      account.email = credentials.email;
-    }
+    } else account.label = parsed.data.label;
     user.activeId = account.id;
   });
   return connectionStatus(userId);
@@ -166,75 +148,29 @@ export async function importConnection(userId: string, value: unknown) {
 export async function selectConnection(userId: string, accountId: string) {
   await mutate((database) => {
     const user = database.users[userId];
-    if (!user?.accounts.some((a) => a.id === accountId && a.credentials))
-      throw new ChatGPTError(
-        'Connect this ChatGPT account again before selecting it.',
-        400,
-      );
+    if (!user?.accounts.some((a) => a.id === accountId))
+      throw new AIError('API key not found.', 404);
     user.activeId = accountId;
   });
   return connectionStatus(userId);
 }
 export async function disconnectConnection(userId: string, accountId: string) {
-  const confirmed = await mutate(async (database) => {
+  await mutate((database) => {
     const user = database.users[userId];
-    const account = user?.accounts.find((a) => a.id === accountId);
-    if (!account) throw new ChatGPTError('ChatGPT connection not found.', 404);
-    const confirmed =
-      !account.credentials || (await revokeCredentials(account.credentials));
-    account.credentials = null;
+    if (!user?.accounts.some((a) => a.id === accountId))
+      throw new AIError('API key not found.', 404);
+    user.accounts = user.accounts.filter((a) => a.id !== accountId);
     if (user.activeId === accountId) user.activeId = null;
-    return confirmed;
   });
-  return {
-    ...(await connectionStatus(userId)),
-    revocationConfirmed: confirmed,
-  };
+  return connectionStatus(userId);
 }
 export async function activeCredentials(userId: string) {
-  return mutate(async (database) => {
-    const user = database.users[userId];
-    const account = user?.accounts.find((a) => a.id === user.activeId);
-    if (!account?.credentials)
-      throw new ChatGPTError(
-        'Connect your ChatGPT account in AI settings first.',
-        400,
-      );
-    if (!account.credentials.scopes.includes('chatgpt.tokens.use.direct'))
-      throw new ChatGPTError(
-        'This connection does not have permission to use your ChatGPT plan. Sign in again and grant plan usage.',
-        403,
-      );
-    if (account.credentials.expires_at <= Date.now() + 60_000) {
-      try {
-        account.credentials = await refreshCredentials(account.credentials);
-      } catch (error) {
-        if (
-          error instanceof ChatGPTError &&
-          [
-            'invalid_grant',
-            'invalid_refresh_token',
-            'token_expired',
-            'refresh_token_expired',
-            'refresh_token_invalidated',
-            'refresh_token_reused',
-          ].includes(error.code)
-        ) {
-          account.credentials = null;
-          // Persist terminal invalidation even though the request itself fails.
-          await writeDatabase(database);
-        }
-        throw error;
-      }
-    }
-    if (!account.credentials.scopes.includes('chatgpt.tokens.use.direct')) {
-      await writeDatabase(database);
-      throw new ChatGPTError(
-        'ChatGPT plan permission was removed. Sign in again to enable it.',
-        403,
-      );
-    }
-    return structuredClone(account.credentials);
-  });
+  await queue;
+  const database = await readDatabase();
+  const user = database.users[userId];
+  const account = user?.accounts.find((a) => a.id === user.activeId);
+  if (!account)
+    throw new AIError('Add an OpenAI API key in AI settings first.', 400);
+  return { apiKey: account.apiKey };
 }
 export type AIConnectionStatus = Awaited<ReturnType<typeof connectionStatus>>;

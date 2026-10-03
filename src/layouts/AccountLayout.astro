@@ -1,62 +1,151 @@
 ---
+import AppSidebar from '../components/AppSidebar';
+import SettingsNav from '../components/SettingsNav';
+import { readConfig } from '../lib/store';
+import { readContainerManagers } from '../lib/container-managers';
+import { Grid2X2, Menu, ShieldCheck } from 'lucide-react';
 import '../styles/global.css';
 import '../styles/auth.css';
 interface Props {
   title: string;
+  section?: string;
 }
-const { title } = Astro.props;
+const { title, section = 'account' } = Astro.props;
 const user = Astro.locals.user;
+const config = await readConfig();
 const error = Astro.url.searchParams.get('error');
 const message = Astro.url.searchParams.get('message');
 ---
 
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme={config.theme} data-accent={config.accent}>
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex,nofollow" />
+    <meta
+      name="theme-color"
+      content={config.theme === 'light' ? '#f4f6f8' : '#111417'}
+    />
     <link rel="icon" href="/favicon.svg" />
-    <title>{title} · The Directory</title>
+    <title>{title} · {config.title}</title>
   </head>
   <body>
-    <div class:list={['account-shell', { 'signed-in': user }]}>
-      <a class="brand" href="/">
-        <img src="/favicon.svg" width="33" height="33" alt="" />
-        the directory<span class="brand-period">.</span>
-      </a>
-      {user && (
-        <nav class="account-nav" aria-label="Account navigation">
-          <a href="/">Dashboard</a>
-          <a href="/account">My account</a>
-          <a href="/ai">AI settings</a>
-          {user.role === 'admin' && <a href="/users">Manage users</a>}
-          <form method="post" action="/api/auth/logout">
-            <button class="button">Sign out</button>
-          </form>
-        </nav>
-      )}
-      <section class="account-card">
-        <div class="eyebrow">YOUR SERVICES. YOUR SPACE.</div>
-        <h1>
-          {title}
-          <span class="greeting-dot">.</span>
-        </h1>
-        {error && (
-          <p class="alert" role="alert">
-            {error}
-          </p>
-        )}
-        {message && (
-          <p class="account-success" role="status">
-            {message}
-          </p>
-        )}
-        <slot />
-      </section>
-      <p class="account-footer">
-        A little corner of the web. Only for the people you invite.
-      </p>
-    </div>
+    {user ? (
+      <div class="app-shell">
+        <button
+          class="sidebar-scrim"
+          id="settings-scrim"
+          aria-label="Close navigation"
+          hidden
+        />
+        <aside class="sidebar" id="settings-sidebar">
+          <AppSidebar
+            client:load
+            config={config}
+            user={user}
+            managers={readContainerManagers()}
+            settings
+          />
+        </aside>
+        <div class="main-shell">
+          <header class="topbar">
+            <div class="breadcrumb">
+              <button
+                class="icon-button mobile-toggle"
+                id="settings-menu"
+                aria-label="Open navigation"
+                aria-controls="settings-sidebar"
+                aria-expanded="false"
+              >
+                <Menu size={20} />
+              </button>
+              <a href="/">Dashboard</a>
+              <span>/</span>
+              <span>Settings</span>
+            </div>
+          </header>
+          <main class="settings-main">
+            <div class="page-heading">
+              <h1>Settings</h1>
+              <span class="role-badge">
+                {user.role === 'admin' ? 'Administrator' : 'Viewer'}
+              </span>
+            </div>
+            <div class="settings-workspace">
+              <SettingsNav active={section} admin={user.role === 'admin'} />
+              <section
+                class="settings-content"
+                aria-labelledby="settings-title"
+              >
+                <h2 id="settings-title">{title}</h2>
+                {error && (
+                  <p class="alert" role="alert">
+                    {error}
+                  </p>
+                )}
+                {message && (
+                  <p class="account-success" role="status">
+                    {message}
+                  </p>
+                )}
+                <slot />
+              </section>
+            </div>
+          </main>
+        </div>
+      </div>
+    ) : (
+      <main class="account-shell">
+        <a class="brand" href="/">
+          <span class="brand-icon">
+            <Grid2X2 size={20} />
+          </span>
+          <span>
+            the directory<span class="brand-period">.</span>
+          </span>
+        </a>
+        <section class="account-card">
+          <div class="login-symbol">
+            <ShieldCheck size={24} />
+          </div>
+          <h1>{title}</h1>
+          {error && (
+            <p class="alert" role="alert">
+              {error}
+            </p>
+          )}
+          {message && (
+            <p class="account-success" role="status">
+              {message}
+            </p>
+          )}
+          <slot />
+        </section>
+        <p class="account-footer">
+          <ShieldCheck size={13} />
+          Private workspace
+        </p>
+      </main>
+    )}
+    <script>
+      const sidebar = document.getElementById('settings-sidebar');
+      const menu = document.getElementById('settings-menu');
+      const scrim = document.getElementById('settings-scrim');
+      const toggle = (open: boolean) => {
+        sidebar?.classList.toggle('open', open);
+        menu?.setAttribute('aria-expanded', String(open));
+        if (scrim) scrim.hidden = !open;
+        if (!open) menu?.focus();
+      };
+      menu?.addEventListener('click', () =>
+        toggle(menu.getAttribute('aria-expanded') !== 'true'),
+      );
+      scrim?.addEventListener('click', () => toggle(false));
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && sidebar?.classList.contains('open'))
+          toggle(false);
+      });
+    </script>
   </body>
 </html>

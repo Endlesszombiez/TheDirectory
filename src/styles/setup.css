@@ -310,3 +310,39 @@
   width: 16px;
   flex-shrink: 0;
 }
+
+.settings-content .ai-connections > h3 {
+  margin: 0 0 8px;
+}
+.settings-content .setup-help {
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  padding: 20px 0 0;
+  margin: 20px 0 0;
+}
+.settings-content .setup-help h2 {
+  font-size: 14px;
+}
+.settings-content .connection-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px;
+}
+.settings-content .connection-entry p {
+  margin: 4px 0 0;
+}
+.settings-content .setup-form {
+  gap: 14px;
+}
+.settings-content .connection-list:empty {
+  display: none;
+}
+@media (max-width: 600px) {
+  .settings-content .connection-entry {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

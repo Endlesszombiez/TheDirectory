@@ -5,7 +5,6 @@ import {
   ArrowUp,
   ArrowUpRight,
   Check,
-  ChevronDown,
   Cloud,
   Code2,
   Database,
@@ -14,10 +13,8 @@ import {
   Globe,
   Grid2X2,
   Home,
-  LayoutDashboard,
   Menu,
   Moon,
-  MoreHorizontal,
   Music,
   Plus,
   Search,
@@ -31,15 +28,14 @@ import {
   Container,
   StickyNote,
   Clock3,
-  Upload,
   Pencil,
-  RefreshCw,
   Sparkles,
 } from 'lucide-react';
-import { configSchema, type Config, type Service } from '../lib/schema';
+import { type Config, type Service } from '../lib/schema';
 import type { PublicUser } from '../lib/auth';
 import DashboardSetup from './DashboardSetup';
-import { ContainerManagerNav, ContainerManagerView } from './ContainerManagers';
+import AppSidebar from './AppSidebar';
+import { ContainerManagerView } from './ContainerManagers';
 import type { ContainerManager } from '../lib/container-managers';
 
 const icons = {
@@ -111,7 +107,6 @@ export default function Dashboard({
   const [boardId, setBoardId] = useState(initialConfig.boards[0].id);
   const [query, setQuery] = useState('');
   const [editing, setEditing] = useState(false);
-  const [settings, setSettings] = useState(false);
   const [setup, setSetup] = useState(false);
   const [service, setService] = useState<Service | null>(null);
   const [status, setStatus] = useState<Status | null>(null);
@@ -121,11 +116,9 @@ export default function Dashboard({
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [mobile, setMobile] = useState(false);
-  const [newBoard, setNewBoard] = useState('');
   const [dragId, setDragId] = useState<string | null>(null);
   const [notes, setNotes] = useState(initialConfig.boards[0].notes);
   const searchRef = useRef<HTMLInputElement>(null);
-  const importRef = useRef<HTMLInputElement>(null);
   const refreshing = useRef(false);
   const board = config.boards.find((b) => b.id === boardId) || config.boards[0];
   const services = board.services.filter((s) =>
@@ -158,6 +151,15 @@ export default function Dashboard({
     }
   }
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const requestedBoard = params.get('board');
+    if (initialConfig.boards.some((b) => b.id === requestedBoard))
+      setBoardId(requestedBoard!);
+    const requestedManager = containerManagers.find(
+      (m) => m.id === params.get('manager') && m.url,
+    );
+    if (requestedManager) setSelectedManager(requestedManager);
+    if (canEdit && params.get('setup') === 'discover') setSetup(true);
     void refresh();
     setNow(new Date());
     const timer = setInterval(() => setNow(new Date()), 1000);
@@ -169,7 +171,6 @@ export default function Dashboard({
       }
       if (event.key === 'Escape') {
         setService(null);
-        setSettings(false);
         setSetup(false);
         setMobile(false);
         searchRef.current?.blur();
@@ -192,7 +193,7 @@ export default function Dashboard({
       .querySelector('meta[name="theme-color"]')
       ?.setAttribute(
         'content',
-        config.theme === 'light' ? '#f5f7f3' : '#101412',
+        config.theme === 'light' ? '#f4f6f8' : '#111417',
       );
     document.title = `${config.title} · Homelab`;
   }, [config.theme, config.accent, config.title]);
@@ -202,8 +203,10 @@ export default function Dashboard({
     return () => clearTimeout(timer);
   }, [message]);
   useEffect(() => {
-    if (!settings && !service && !setup) return;
+    if (!service && !setup) return;
     const previous = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
     const timer = setTimeout(
       () =>
         document
@@ -217,7 +220,7 @@ export default function Dashboard({
         document.querySelectorAll<HTMLElement>(
           '.modal button:not(:disabled), .modal input:not(:disabled):not([hidden]), .modal select:not(:disabled), .modal textarea:not(:disabled), .modal a[href]',
         ),
-      );
+      ).filter((element) => element.getClientRects().length > 0);
       const first = elements[0],
         last = elements.at(-1);
       if (event.shiftKey && document.activeElement === first) {
@@ -232,9 +235,10 @@ export default function Dashboard({
     return () => {
       clearTimeout(timer);
       document.removeEventListener('keydown', trap);
+      document.body.style.overflow = previousOverflow;
       previous?.focus();
     };
-  }, [settings, !!service, setup]);
+  }, [!!service, setup]);
 
   async function persist(next: Config) {
     if (!canEdit) return false;
@@ -282,39 +286,6 @@ export default function Dashboard({
     )
       setService(null);
   }
-  function exportConfig() {
-    const url = URL.createObjectURL(
-      new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' }),
-    );
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'thedirectory.json';
-    link.click();
-    URL.revokeObjectURL(url);
-  }
-  async function importConfig(file?: File) {
-    if (!file) return;
-    if (file.size > 512_000) {
-      setError('The import file is too large.');
-      return;
-    }
-    try {
-      const next = configSchema.parse(JSON.parse(await file.text()));
-      if (
-        !window.confirm(
-          'Replace all boards and settings with this configuration?',
-        )
-      )
-        return;
-      if (await persist({ ...next, revision: config.revision }))
-        setBoardId(next.boards[0].id);
-    } catch {
-      setError(
-        'Invalid configuration file. Export a dashboard to see the supported format.',
-      );
-    }
-    if (importRef.current) importRef.current.value = '';
-  }
   function move(id: string, direction: number) {
     const list = [...board.services];
     const index = list.findIndex((s) => s.id === id);
@@ -329,13 +300,6 @@ export default function Dashboard({
       minute: '2-digit',
       hour12: false,
     }) || '--:--';
-  const greeting = !now
-    ? 'Welcome home'
-    : now.getHours() < 12
-      ? 'Good morning'
-      : now.getHours() < 18
-        ? 'Good afternoon'
-        : 'Good evening';
 
   return (
     <div
@@ -359,121 +323,28 @@ export default function Dashboard({
           onClick={() => setMobile(false)}
         />
       )}
-      <aside className={`sidebar ${mobile ? 'open' : ''}`}>
-        <a className="brand" href="/" aria-label="The Directory home">
-          <span className="brand-icon">
-            <Grid2X2 size={21} />
-          </span>
-          <span>
-            the directory<span className="brand-period">.</span>
-          </span>
-        </a>
-        <div className="workspace">
-          <span className="workspace-avatar">
-            <Home size={18} />
-          </span>
-          <span>
-            My homelab<small>Your personal workspace</small>
-          </span>
-          <ChevronDown size={14} />
-        </div>
-        <div className="nav-label">WORKSPACE</div>
-        <nav aria-label="Boards">
-          {config.boards.map((b, i) => (
-            <button
-              key={b.id}
-              className={`nav-item ${!selectedManager && board.id === b.id ? 'active' : ''}`}
-              onClick={() => {
-                setSelectedManager(null);
-                setBoardId(b.id);
-                setQuery('');
-                setMobile(false);
-              }}
-            >
-              <LayoutDashboard size={18} />
-              <span>{b.name}</span>
-              {i === 0 && (
-                <span className="nav-count">{b.services.length}</span>
-              )}
-            </button>
-          ))}
-        </nav>
-        {canEdit && (
-          <button
-            className="nav-item subdued"
-            onClick={() => setSettings(true)}
-          >
-            <Plus size={18} />
-            <span>Create a board</span>
-          </button>
-        )}
-        <div className="sidebar-separator" />
-        <ContainerManagerNav
+      <aside
+        id="dashboard-sidebar"
+        className={`sidebar ${mobile ? 'open' : ''}`}
+      >
+        <AppSidebar
+          config={config}
+          user={user}
           managers={containerManagers}
-          selected={selectedManager}
-          onSelect={(manager) => {
+          boardId={board.id}
+          managerId={selectedManager?.id}
+          onBoard={(id) => {
+            setSelectedManager(null);
+            setBoardId(id);
+            setQuery('');
+            setMobile(false);
+          }}
+          onManager={(manager) => {
             setSelectedManager(manager);
             setMobile(false);
             setEditing(false);
           }}
         />
-        {canEdit && (
-          <>
-            <div className="sidebar-separator" />
-            <div className="nav-label">MANAGE</div>
-            <button
-              className="nav-item"
-              onClick={() => {
-                setSettings(true);
-              }}
-            >
-              <Settings2 size={18} />
-              <span>Customization</span>
-            </button>
-            <button className="nav-item" onClick={() => setSetup(true)}>
-              <Sparkles size={18} />
-              <span>Set up dashboard</span>
-            </button>
-            <button className="nav-item" onClick={exportConfig}>
-              <Download size={18} />
-              <span>Export dashboard</span>
-            </button>
-            <a className="nav-item" href="/users">
-              <Shield size={18} />
-              <span>People & permissions</span>
-            </a>
-          </>
-        )}
-        <a className="nav-item" href="/ai">
-          <Sparkles size={18} />
-          <span>AI settings</span>
-        </a>
-        <div className="sidebar-bottom">
-          <div className="home-card">
-            <span className="home-card-icon">
-              <Server size={19} />
-            </span>
-            <strong>A place for everything.</strong>
-            <p>
-              Your lab. Your layout.
-              <br />
-              Your little corner of the web.
-            </p>
-            <span className="version">
-              THE DIRECTORY <span>v0.1</span>
-            </span>
-          </div>
-          <a className="profile" href="/account">
-            <span className="avatar">
-              {user.username.slice(0, 2).toUpperCase()}
-            </span>
-            <span>
-              {user.username}
-              <small>{canEdit ? 'Administrator' : 'Viewer'} · My account</small>
-            </span>
-            <Settings2 size={16} />
-          </a>
-        </div>
       </aside>
       <div className="main-shell">
         <header className="topbar">
@@ -481,6 +352,8 @@ export default function Dashboard({
             <button
               className="icon-button mobile-toggle"
               aria-label="Open navigation"
+              aria-expanded={mobile}
+              aria-controls="dashboard-sidebar"
               onClick={() => setMobile(true)}
             >
               <Menu size={20} />
@@ -512,9 +385,6 @@ export default function Dashboard({
             >
               {config.theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
             </button>
-            <a href="/account" className="avatar small" aria-label="My account">
-              {user.username.slice(0, 2).toUpperCase()}
-            </a>
           </div>
         </header>
         <main className={selectedManager ? 'manager-main' : undefined}>
@@ -527,24 +397,22 @@ export default function Dashboard({
             <>
               <div className="page-heading">
                 <div>
-                  <div className="eyebrow">
-                    <span className="tiny-line" /> YOUR HOMELAB, AT A GLANCE
-                  </div>
-                  <h1>
-                    {greeting}
-                    <span className="greeting-dot">.</span>
-                  </h1>
-                  <p>{config.subtitle}</p>
+                  <h1>{board.name}</h1>
+                  {config.subtitle && <p>{config.subtitle}</p>}
                 </div>
                 <div className="heading-actions">
                   {canEdit ? (
                     <>
+                      <button className="button" onClick={() => setSetup(true)}>
+                        <Sparkles size={16} />
+                        Discover
+                      </button>
                       <button
                         className={`button ${editing ? 'selected' : ''}`}
                         onClick={() => setEditing(!editing)}
                       >
                         <Settings2 size={16} />
-                        {editing ? 'Done editing' : 'Edit dashboard'}
+                        {editing ? 'Done' : 'Edit'}
                       </button>
                       <button
                         className="button primary"
@@ -571,34 +439,27 @@ export default function Dashboard({
                   </button>
                 </div>
               )}
-              <div className="overview-strip">
-                <span>
-                  <span className="dot" />
-                  {board.services.length} services in your directory
-                </span>
-                <span>
-                  <Activity size={14} />
-                  {checked.length
-                    ? `${up} of ${checked.length} checks healthy`
-                    : 'Health checks ready to configure'}
-                </span>
-                <span className="updated">
-                  <RefreshCw size={13} />
-                  {statusError
-                    ? 'Connection lost · retrying'
-                    : status
-                      ? 'Updates every 30 seconds'
-                      : 'Connecting to your lab…'}
-                </span>
-              </div>
               <div className="dashboard-layout">
                 <section className="services-section" aria-label="Services">
                   <div className="section-toolbar">
                     <div className="section-title">
                       <Grid2X2 size={17} />
-                      <h2>Your services</h2>
+                      <h2>Services</h2>
                       <span className="count">{services.length}</span>
                     </div>
+                    <span
+                      className={`health-summary ${statusError || (status && up < checked.length) ? 'is-error' : checked.length && status ? 'is-healthy' : ''}`}
+                      title="Health checks refresh every 30 seconds"
+                    >
+                      <span className="dot" />
+                      {statusError
+                        ? 'Connection lost'
+                        : checked.length
+                          ? status
+                            ? `${up}/${checked.length} healthy`
+                            : 'Checking…'
+                          : 'Checks off'}
+                    </span>
                     <div className="search">
                       <Search size={16} />
                       <input
@@ -608,7 +469,7 @@ export default function Dashboard({
                         placeholder="Find a service…"
                         aria-label="Find a service"
                       />
-                      <kbd>⌘ K</kbd>
+                      <kbd>Ctrl K</kbd>
                     </div>
                   </div>
                   {canEdit && editing && (
@@ -652,11 +513,10 @@ export default function Dashboard({
                       </button>
                     </div>
                   )}
-                  {groups.map((group, groupIndex) => (
+                  {groups.map((group) => (
                     <div className="service-group" key={group}>
                       <div className="group-heading">
                         <h3>{group}</h3>
-                        <span>{String(groupIndex + 1).padStart(2, '0')}</span>
                         <div />
                       </div>
                       <div
@@ -723,30 +583,30 @@ export default function Dashboard({
                                     />
                                   </div>
                                   <h4>{s.name}</h4>
-                                  <p>
-                                    {s.description || new URL(s.url).hostname}
-                                  </p>
+                                  {s.description && <p>{s.description}</p>}
                                   <div className="card-footer">
-                                    <span
-                                      className={`service-status ${s.check ? health?.state || 'pending' : 'unchecked'}`}
-                                    >
-                                      <span className="dot" />
-                                      {!s.check
-                                        ? 'Not monitored'
-                                        : !health
-                                          ? 'Checking…'
+                                    <span className="service-host">
+                                      {new URL(s.url).host}
+                                    </span>
+                                    {s.check && (
+                                      <span
+                                        className={`service-status ${health?.state || 'pending'}`}
+                                        title={
+                                          health?.latency !== undefined
+                                            ? `${health.latency} ms`
+                                            : undefined
+                                        }
+                                      >
+                                        <span className="dot" />
+                                        {!health
+                                          ? 'Checking'
                                           : health.state === 'up'
                                             ? 'Online'
-                                            : 'Unreachable'}
-                                    </span>
-                                    <span>
-                                      {health?.latency !== undefined
-                                        ? `${health.latency} ms`
-                                        : new URL(s.url).hostname.replace(
-                                            '.home',
-                                            '',
-                                          )}
-                                    </span>
+                                            : health.state === 'down'
+                                              ? 'Offline'
+                                              : 'Unchecked'}
+                                      </span>
+                                    )}
                                   </div>
                                 </a>
                                 {editing && (
@@ -810,35 +670,10 @@ export default function Dashboard({
                       </div>
                     </div>
                   ))}
-                  {canEdit && (
-                    <>
-                      <button
-                        className="add-service-tile"
-                        onClick={() => setService(blankService())}
-                      >
-                        <Plus size={18} />
-                        <span>A new addition to your lab?</span>
-                        <strong>Add a service</strong>
-                        <ArrowUpRight size={15} />
-                      </button>
-                      <div className="tip">
-                        <span>✦</span>
-                        <p>
-                          Make room for your favorites.{' '}
-                          <button onClick={() => setSettings(true)}>
-                            Customize your dashboard
-                          </button>{' '}
-                          to feel a little more like you.
-                        </p>
-                      </div>
-                    </>
-                  )}
                 </section>
                 {!!config.widgets.length && (
                   <aside className="widgets" aria-label="Dashboard widgets">
-                    <div className="widget-section-label">
-                      A LITTLE CONTEXT <MoreHorizontal size={17} />
-                    </div>
+                    <div className="widget-section-label">Host & notes</div>
                     {config.widgets.map((widget) =>
                       widget === 'clock' ? (
                         <section className="widget clock-widget" key={widget}>
@@ -857,17 +692,13 @@ export default function Dashboard({
                               day: 'numeric',
                             }) || 'Your local time'}
                           </p>
-                          <div className="clock-bottom">
-                            <span className="dot" />A good day to build
-                            something.
-                          </div>
                         </section>
                       ) : widget === 'system' ? (
                         <section className="widget" key={widget}>
                           <div className="widget-heading">
                             <h3>
                               <Activity size={16} />
-                              System overview
+                              Host
                             </h3>
                             <span className="live-label">LIVE</span>
                           </div>
@@ -971,19 +802,17 @@ export default function Dashboard({
                               <strong>
                                 {status?.docker.error
                                   ? 'Connection unavailable'
-                                  : 'Meet your containers'}
+                                  : 'Docker not connected'}
                               </strong>
                               <p>
                                 {status?.docker.error ||
-                                  'Connect a Docker socket to see your containers here.'}
+                                  'Connect Docker in Settings.'}
                               </p>
-                              <button
-                                className="text-button"
-                                disabled={!canEdit}
-                                onClick={() => setSettings(true)}
-                              >
-                                Integration setup <ArrowUpRight size={13} />
-                              </button>
+                              {canEdit && (
+                                <a className="text-button" href="/ai">
+                                  Connections <ArrowUpRight size={13} />
+                                </a>
+                              )}
                             </div>
                           )}
                         </section>
@@ -992,7 +821,7 @@ export default function Dashboard({
                           <div className="widget-heading">
                             <h3>
                               <StickyNote size={16} />
-                              Scratchpad
+                              Notes
                             </h3>
                             <Pencil size={14} />
                           </div>
@@ -1001,11 +830,11 @@ export default function Dashboard({
                             readOnly={!canEdit}
                             value={notes}
                             onChange={(e) => setNotes(e.target.value)}
-                            placeholder="A thought, a reminder, a little note…"
+                            placeholder="Add a note…"
                             maxLength={10000}
                           />
                           <div className="notes-footer">
-                            <span>Just for this board</span>
+                            <span>Board notes</span>
                             <button
                               className="text-button"
                               disabled={
@@ -1034,19 +863,6 @@ export default function Dashboard({
                   </aside>
                 )}
               </div>
-              <footer className="page-footer">
-                <span>
-                  <span className="footer-mark">
-                    <Grid2X2 size={13} />
-                  </span>
-                  {config.title}
-                  <span className="footer-divider">/</span> Your services. Your
-                  space.
-                </span>
-                <span>
-                  Built for life at home <Home size={12} />
-                </span>
-              </footer>
             </>
           )}
         </main>
@@ -1074,13 +890,12 @@ export default function Dashboard({
           }}
         />
       )}
-      {canEdit && (service || settings) && (
+      {canEdit && service && (
         <div
           className="modal-backdrop"
           onMouseDown={(e) => {
             if (e.target === e.currentTarget) {
               setService(null);
-              setSettings(false);
             }
           }}
         >
@@ -1092,13 +907,10 @@ export default function Dashboard({
           >
             <div className="modal-heading">
               <div>
-                <span className="eyebrow">MAKE IT YOURS</span>
                 <h2 id="modal-title">
-                  {service
-                    ? board.services.some((s) => s.id === service.id)
-                      ? 'Edit service'
-                      : 'Add a service'
-                    : 'Your dashboard'}
+                  {board.services.some((s) => s.id === service.id)
+                    ? 'Edit service'
+                    : 'Add service'}
                 </h2>
               </div>
               <button
@@ -1106,7 +918,6 @@ export default function Dashboard({
                 aria-label="Close dialog"
                 onClick={() => {
                   setService(null);
-                  setSettings(false);
                 }}
               >
                 <X size={20} />
@@ -1117,378 +928,125 @@ export default function Dashboard({
                 {error}
               </p>
             )}
-            {service ? (
-              <form onSubmit={saveService}>
+            <form onSubmit={saveService}>
+              <label>
+                Name
+                <input
+                  required
+                  maxLength={80}
+                  value={service.name}
+                  onChange={(e) =>
+                    setService({ ...service, name: e.target.value })
+                  }
+                  placeholder="e.g. Jellyfin"
+                />
+              </label>
+              <label>
+                Description
+                <input
+                  maxLength={160}
+                  value={service.description}
+                  onChange={(e) =>
+                    setService({ ...service, description: e.target.value })
+                  }
+                  placeholder="Optional description"
+                />
+              </label>
+              <label>
+                Service URL
+                <input
+                  required
+                  type="url"
+                  pattern="https?://.*"
+                  value={service.url}
+                  onChange={(e) =>
+                    setService({ ...service, url: e.target.value })
+                  }
+                  placeholder="http://192.168.1.10:8096"
+                />
+              </label>
+              <label>
+                Category
+                <input
+                  required
+                  list="groups"
+                  maxLength={50}
+                  value={service.group}
+                  onChange={(e) =>
+                    setService({ ...service, group: e.target.value })
+                  }
+                />
+                <datalist id="groups">
+                  {[...new Set(board.services.map((s) => s.group))].map((g) => (
+                    <option key={g} value={g} />
+                  ))}
+                </datalist>
+              </label>
+              <div className="form-row">
                 <label>
-                  Name
-                  <input
-                    required
-                    maxLength={80}
-                    value={service.name}
+                  Icon
+                  <select
+                    value={service.icon}
                     onChange={(e) =>
-                      setService({ ...service, name: e.target.value })
+                      setService({
+                        ...service,
+                        icon: e.target.value as Service['icon'],
+                      })
                     }
-                    placeholder="e.g. Jellyfin"
-                  />
+                  >
+                    {Object.keys(icons).map((icon) => (
+                      <option key={icon}>{icon}</option>
+                    ))}
+                  </select>
                 </label>
                 <label>
-                  Description
-                  <input
-                    maxLength={160}
-                    value={service.description}
+                  Color
+                  <select
+                    value={service.color}
                     onChange={(e) =>
-                      setService({ ...service, description: e.target.value })
+                      setService({
+                        ...service,
+                        color: e.target.value as Service['color'],
+                      })
                     }
-                    placeholder="What lives here?"
-                  />
-                </label>
-                <label>
-                  Service URL
-                  <input
-                    required
-                    type="url"
-                    pattern="https?://.*"
-                    value={service.url}
-                    onChange={(e) =>
-                      setService({ ...service, url: e.target.value })
-                    }
-                    placeholder="http://192.168.1.10:8096"
-                  />
-                </label>
-                <label>
-                  Category
-                  <input
-                    required
-                    list="groups"
-                    maxLength={50}
-                    value={service.group}
-                    onChange={(e) =>
-                      setService({ ...service, group: e.target.value })
-                    }
-                  />
-                  <datalist id="groups">
-                    {[...new Set(board.services.map((s) => s.group))].map(
-                      (g) => (
-                        <option key={g} value={g} />
+                  >
+                    {['mint', 'purple', 'orange', 'blue', 'pink'].map(
+                      (color) => (
+                        <option key={color}>{color}</option>
                       ),
                     )}
-                  </datalist>
+                  </select>
                 </label>
-                <div className="form-row">
-                  <label>
-                    Icon
-                    <select
-                      value={service.icon}
-                      onChange={(e) =>
-                        setService({
-                          ...service,
-                          icon: e.target.value as Service['icon'],
-                        })
-                      }
-                    >
-                      {Object.keys(icons).map((icon) => (
-                        <option key={icon}>{icon}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    Color
-                    <select
-                      value={service.color}
-                      onChange={(e) =>
-                        setService({
-                          ...service,
-                          color: e.target.value as Service['color'],
-                        })
-                      }
-                    >
-                      {['mint', 'purple', 'orange', 'blue', 'pink'].map(
-                        (color) => (
-                          <option key={color}>{color}</option>
-                        ),
-                      )}
-                    </select>
-                  </label>
-                </div>
-                <label className="checkbox-label">
-                  <input
-                    type="checkbox"
-                    checked={service.check}
-                    onChange={(e) =>
-                      setService({ ...service, check: e.target.checked })
-                    }
-                  />
-                  <span>
-                    Check service health
-                    <small>
-                      The server checks this URL every 30 seconds while the
-                      dashboard is open.
-                    </small>
-                  </span>
-                </label>
-                <div className="modal-actions">
-                  <button
-                    type="button"
-                    className="button"
-                    onClick={() => setService(null)}
-                  >
-                    Cancel
-                  </button>
-                  <button className="button primary" disabled={saving}>
-                    {saving ? 'Saving…' : 'Save service'}
-                  </button>
-                </div>
-              </form>
-            ) : (
-              <>
-                <form
-                  onSubmit={async (e) => {
-                    e.preventDefault();
-                    const form = new FormData(e.currentTarget);
-                    await persist({
-                      ...config,
-                      title: String(form.get('title')),
-                      subtitle: String(form.get('subtitle')),
-                      compact: form.has('compact'),
-                      backgroundUrl: String(form.get('backgroundUrl')),
-                      customCss: String(form.get('customCss')),
-                      theme: form.get('theme') as Config['theme'],
-                      accent: form.get('accent') as Config['accent'],
-                      columns: Number(form.get('columns')),
-                      widgets: form.getAll('widgets') as Config['widgets'],
-                    });
-                  }}
+              </div>
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={service.check}
+                  onChange={(e) =>
+                    setService({ ...service, check: e.target.checked })
+                  }
+                />
+                <span>
+                  Check service health
+                  <small>
+                    The server checks this URL every 30 seconds while the
+                    dashboard is open.
+                  </small>
+                </span>
+              </label>
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="button"
+                  onClick={() => setService(null)}
                 >
-                  <label>
-                    Dashboard name
-                    <input
-                      name="title"
-                      required
-                      defaultValue={config.title}
-                      maxLength={60}
-                    />
-                  </label>
-                  <label>
-                    Welcome subtitle
-                    <input
-                      name="subtitle"
-                      defaultValue={config.subtitle}
-                      maxLength={160}
-                    />
-                  </label>
-                  <div className="form-row">
-                    <label>
-                      Appearance
-                      <select name="theme" defaultValue={config.theme}>
-                        <option value="dark">Dark</option>
-                        <option value="light">Light</option>
-                      </select>
-                    </label>
-                    <label>
-                      Accent
-                      <select name="accent" defaultValue={config.accent}>
-                        {['mint', 'blue', 'purple', 'orange'].map((c) => (
-                          <option key={c}>{c}</option>
-                        ))}
-                      </select>
-                    </label>
-                    <label>
-                      Columns
-                      <select name="columns" defaultValue={config.columns}>
-                        {[2, 3, 4].map((n) => (
-                          <option key={n}>{n}</option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-                  <label className="checkbox-label">
-                    <input
-                      name="compact"
-                      type="checkbox"
-                      defaultChecked={config.compact}
-                    />
-                    Compact service cards
-                  </label>
-                  <label>
-                    Background image URL
-                    <input
-                      name="backgroundUrl"
-                      type="url"
-                      pattern="https?://.*"
-                      defaultValue={config.backgroundUrl}
-                      placeholder="https://example.com/background.jpg"
-                    />
-                  </label>
-                  <label>
-                    Custom CSS
-                    <textarea
-                      className="custom-css"
-                      name="customCss"
-                      defaultValue={config.customCss}
-                      maxLength={12000}
-                      placeholder=".service-card { border-radius: 16px; }"
-                    />
-                    <small>
-                      Advanced: applies to everyone using this shared dashboard.
-                    </small>
-                  </label>
-                  <fieldset>
-                    <legend>Widgets</legend>
-                    <div className="widget-options">
-                      {['clock', 'system', 'docker', 'notes'].map((w) => (
-                        <label className="checkbox-label" key={w}>
-                          <input
-                            name="widgets"
-                            type="checkbox"
-                            value={w}
-                            defaultChecked={config.widgets.includes(
-                              w as Config['widgets'][number],
-                            )}
-                          />
-                          {w}
-                        </label>
-                      ))}
-                    </div>
-                  </fieldset>
-                  <button
-                    className="button primary full-width"
-                    disabled={saving}
-                  >
-                    {saving ? 'Saving…' : 'Save appearance'}
-                  </button>
-                </form>
-                <div className="settings-section">
-                  <h3>Boards</h3>
-                  {config.boards.map((b) => (
-                    <div className="board-setting" key={b.id}>
-                      <input
-                        aria-label={`Rename ${b.name}`}
-                        defaultValue={b.name}
-                        key={`${b.id}:${b.name}`}
-                        maxLength={40}
-                        onBlur={(e) => {
-                          const name = e.target.value.trim();
-                          if (name && name !== b.name)
-                            void persist({
-                              ...config,
-                              boards: config.boards.map((item) =>
-                                item.id === b.id ? { ...item, name } : item,
-                              ),
-                            });
-                        }}
-                      />
-                      <button
-                        className="icon-button"
-                        aria-label={`Delete board ${b.name}`}
-                        disabled={saving || config.boards.length === 1}
-                        onClick={() => {
-                          if (
-                            window.confirm(
-                              `Delete ${b.name} and all its services?`,
-                            )
-                          )
-                            void persist({
-                              ...config,
-                              boards: config.boards.filter(
-                                (item) => item.id !== b.id,
-                              ),
-                            });
-                        }}
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    </div>
-                  ))}
-                  <form
-                    className="inline-form"
-                    onSubmit={async (e) => {
-                      e.preventDefault();
-                      if (!newBoard.trim()) return;
-                      const id = crypto.randomUUID();
-                      if (
-                        await persist({
-                          ...config,
-                          boards: [
-                            ...config.boards,
-                            {
-                              id,
-                              name: newBoard.trim(),
-                              services: [],
-                              notes: '',
-                            },
-                          ],
-                        })
-                      ) {
-                        setBoardId(id);
-                        setNewBoard('');
-                      }
-                    }}
-                  >
-                    <input
-                      aria-label="New board name"
-                      placeholder="New board name"
-                      value={newBoard}
-                      maxLength={40}
-                      onChange={(e) => setNewBoard(e.target.value)}
-                    />
-                    <button
-                      className="button"
-                      disabled={saving || config.boards.length >= 12}
-                    >
-                      <Plus size={16} />
-                      Add
-                    </button>
-                  </form>
-                </div>
-                <div className="settings-section">
-                  <h3>Docker integration</h3>
-                  <button
-                    className="button"
-                    onClick={() => {
-                      setSettings(false);
-                      setSetup(true);
-                    }}
-                  >
-                    <Container size={15} /> Discover and import services
-                  </button>
-                  <p>
-                    Set <code>DOCKER_SOCKET=/var/run/docker.sock</code> and
-                    mount the socket in your container. The dashboard only reads
-                    container information. See the README for socket access and
-                    permissions.
-                  </p>
-                  <p>
-                    Service health checks use your saved URLs. Media, Proxmox,
-                    and Home Assistant API integrations are planned; their
-                    example cards are links.
-                  </p>
-                </div>
-                <div className="settings-section">
-                  <h3>Take your setup with you</h3>
-                  <div className="form-row">
-                    <button className="button" onClick={exportConfig}>
-                      <Download size={15} />
-                      Export JSON
-                    </button>
-                    <button
-                      className="button"
-                      disabled={saving}
-                      onClick={() => importRef.current?.click()}
-                    >
-                      <Upload size={15} />
-                      Import JSON
-                    </button>
-                    <input
-                      ref={importRef}
-                      hidden
-                      type="file"
-                      accept="application/json,.json"
-                      onChange={(e) => void importConfig(e.target.files?.[0])}
-                    />
-                  </div>
-                </div>
-              </>
-            )}
+                  Cancel
+                </button>
+                <button className="button primary" disabled={saving}>
+                  {saving ? 'Saving…' : 'Save service'}
+                </button>
+              </div>
+            </form>
           </section>
         </div>
       )}

@@ -6,10 +6,10 @@ const ready = await ensureBootstrap();
 if (!ready) Astro.response.status = 503;
 ---
 
-<AccountLayout title={ready ? 'Welcome home' : 'Set up your administrator'}>
+<AccountLayout title={ready ? 'Sign in' : 'Set up your administrator'}>
   {ready ? (
     <>
-      <p class="account-intro">Sign in to your homelab directory.</p>
+      <p class="account-intro">Your services, one place.</p>
       <form method="post" action="/api/auth/login" class="account-form">
         <label>
           Username
@@ -33,10 +33,7 @@ if (!ready) Astro.response.status = 503;
         </label>
         <button class="button primary full-width">Sign in</button>
       </form>
-      <p class="account-help">
-        Accounts are created by your administrator. Sessions expire after 12
-        hours.
-      </p>
+      <p class="account-help">Need access? Contact your administrator.</p>
     </>
   ) : (
     <>

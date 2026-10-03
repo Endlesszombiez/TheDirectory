@@ -2,11 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { activeCredentials } from './ai-connections';
 import { configSchema, serviceSchema, type Config } from './schema';
-import {
-  ChatGPTError,
-  providerError,
-  RESOURCE,
-} from '../../scripts/connect-chatgpt.mjs';
+import { AIError, providerError, RESOURCE, apiModels } from './ai-provider';
 
 const appearanceSchema = z.object(configSchema.shape).pick({
   title: true,
@@ -52,7 +48,7 @@ export const serviceKey = (boardId: string, serviceId: string) =>
 export function applyAIPlan(config: Config, value: unknown): Config {
   const parsed = planSchema.safeParse(value);
   if (!parsed.success)
-    throw new ChatGPTError(
+    throw new AIError(
       'The AI proposal did not match the dashboard format. Try a more specific prompt.',
       502,
     );
@@ -67,16 +63,13 @@ export function applyAIPlan(config: Config, value: unknown): Config {
   const boards = plan.boards.map((b) => {
     const originalBoard = config.boards.find((v) => v.id === b.id);
     if (b.id && !originalBoard)
-      throw new ChatGPTError(
+      throw new AIError(
         'The AI proposal referenced an unknown board. Try again.',
         502,
       );
     const id = originalBoard?.id || randomUUID();
     if (boardIds.has(id))
-      throw new ChatGPTError(
-        'The AI proposal duplicated a board. Try again.',
-        502,
-      );
+      throw new AIError('The AI proposal duplicated a board. Try again.', 502);
     boardIds.add(id);
     const serviceIds = new Set<string>();
     return {
@@ -86,7 +79,7 @@ export function applyAIPlan(config: Config, value: unknown): Config {
       services: b.services.map((s) => {
         const original = originals.get(s.key);
         if (!original || seen.has(s.key))
-          throw new ChatGPTError(
+          throw new AIError(
             'The AI proposal duplicated or invented a service. Try again.',
             502,
           );
@@ -100,7 +93,7 @@ export function applyAIPlan(config: Config, value: unknown): Config {
     };
   });
   if (seen.size !== originals.size)
-    throw new ChatGPTError(
+    throw new AIError(
       'The AI proposal omitted existing services. Try again; your dashboard has not changed.',
       502,
     );
@@ -112,55 +105,33 @@ export function applyAIPlan(config: Config, value: unknown): Config {
     boards,
   });
   if (!result.success)
-    throw new ChatGPTError(
+    throw new AIError(
       'The AI proposal exceeds dashboard limits. Try a smaller change.',
       502,
     );
   return result.data;
 }
 const modelSchema = z.object({
-  models: z
-    .array(
-      z.object({
-        slug: z.string().min(1).max(200),
-        display_name: z.string().max(300),
-        visibility: z.string(),
-      }),
-    )
-    .max(2000),
+  data: z.array(z.object({ id: z.string().min(1).max(200) })).max(2000),
 });
 export async function listModels(userId: string) {
   const credentials = await activeCredentials(userId);
-  const response = await fetch(`${RESOURCE}/models`, {
-    headers: { Authorization: `Bearer ${credentials.access_token}` },
-    signal: AbortSignal.timeout(20_000),
-    redirect: 'error',
-  });
-  const raw = await response.text();
-  if (raw.length > 1_000_000)
-    throw new ChatGPTError('ChatGPT returned too many models.');
-  let value;
-  try {
-    value = JSON.parse(raw);
-  } catch {
-    throw new ChatGPTError('ChatGPT returned an invalid model catalog.');
-  }
-  if (!response.ok)
-    throw providerError(
-      response.status,
-      value,
-      response.headers.get('x-request-id') || '',
-    );
-  const catalog = modelSchema.safeParse(value);
+  const catalog = modelSchema.safeParse(await apiModels(credentials.apiKey));
   if (!catalog.success)
-    throw new ChatGPTError('ChatGPT returned an unsupported model catalog.');
-  return catalog.data.models
-    .filter((m) => m.visibility === 'list')
-    .map((m) => ({ id: m.slug, name: m.display_name }));
+    throw new AIError('OpenAI returned an unsupported model catalog.');
+  return catalog.data.data
+    .filter(
+      (m) =>
+        /^(gpt-|chatgpt-|o[1-9](?:-|$))/.test(m.id) &&
+        !/(audio|realtime|transcribe|tts|image|instruct|search|deep-research|codex)/.test(
+          m.id,
+        ),
+    )
+    .map((m) => ({ id: m.id, name: m.id }))
+    .sort((a, b) => a.id.localeCompare(b.id));
 }
 export async function readAIStream(response: Response) {
-  if (!response.body)
-    throw new ChatGPTError('ChatGPT returned an empty response.');
+  if (!response.body) throw new AIError('OpenAI returned an empty response.');
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '',
@@ -178,19 +149,21 @@ export async function readAIStream(response: Response) {
     try {
       value = JSON.parse(data);
     } catch {
-      throw new ChatGPTError('ChatGPT returned an invalid stream event.');
+      throw new AIError('OpenAI returned an invalid stream event.');
     }
     if (value.type === 'response.failed' || value.type === 'error') {
       const code = value.response?.error?.code || value.code;
       throw providerError(
-        code === 'subscription_sharing_usage_limit_exceeded' ? 429 : 502,
+        ['insufficient_quota', 'rate_limit_exceeded'].includes(code)
+          ? 429
+          : 502,
         { error: { code } },
         response.headers.get('x-request-id') || '',
       );
     }
     if (value.type === 'response.incomplete')
-      throw new ChatGPTError(
-        'ChatGPT stopped before completing the proposal. Try again.',
+      throw new AIError(
+        'OpenAI stopped before completing the proposal. Try again.',
       );
     if (
       value.type === 'response.output_text.delta' &&
@@ -210,7 +183,7 @@ export async function readAIStream(response: Response) {
       completed = true;
     }
     if (text.length > 256_000)
-      throw new ChatGPTError(
+      throw new AIError(
         'The AI proposal is too large. Try a smaller dashboard change.',
       );
   }
@@ -220,7 +193,7 @@ export async function readAIStream(response: Response) {
       if (done) break;
       bytes += value.byteLength;
       if (bytes > 2_000_000)
-        throw new ChatGPTError('ChatGPT returned too much data.');
+        throw new AIError('OpenAI returned too much data.');
       buffer += decoder.decode(value, { stream: true });
       let match;
       while ((match = /\r?\n\r?\n/.exec(buffer))) {
@@ -231,8 +204,8 @@ export async function readAIStream(response: Response) {
     buffer += decoder.decode();
     if (buffer.trim()) event(buffer);
     if (!completed || !text.trim())
-      throw new ChatGPTError(
-        'ChatGPT did not finish the proposal. Your dashboard has not changed.',
+      throw new AIError(
+        'OpenAI did not finish the proposal. Your dashboard has not changed.',
       );
     try {
       return JSON.parse(
@@ -242,9 +215,7 @@ export async function readAIStream(response: Response) {
           .replace(/\s*```$/, ''),
       );
     } catch {
-      throw new ChatGPTError(
-        'ChatGPT returned an unreadable proposal. Try again.',
-      );
+      throw new AIError('OpenAI returned an unreadable proposal. Try again.');
     }
   } finally {
     await reader.cancel().catch(() => {});
@@ -270,7 +241,7 @@ export async function proposeDashboard(
   config: Config,
 ) {
   if (active.has(userId) || active.size >= 4)
-    throw new ChatGPTError(
+    throw new AIError(
       'Another AI setup request is running. Wait for it to finish.',
       429,
     );
@@ -279,10 +250,7 @@ export async function proposeDashboard(
   try {
     const models = await listModels(userId);
     if (!models.some((m) => m.id === model))
-      throw new ChatGPTError(
-        'Choose a model available to your connected ChatGPT account.',
-        400,
-      );
+      throw new AIError('Choose a model available to your saved API key.', 400);
     const credentials = await activeCredentials(userId);
     const appearance = appearanceSchema.parse(config);
     const context = {
@@ -308,7 +276,7 @@ export async function proposeDashboard(
       redirect: 'error',
       signal: AbortSignal.any([controller.signal, AbortSignal.timeout(90_000)]),
       headers: {
-        Authorization: `Bearer ${credentials.access_token}`,
+        Authorization: `Bearer ${credentials.apiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({

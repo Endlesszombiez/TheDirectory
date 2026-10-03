@@ -1,17 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { generateKeyPairSync, sign } from 'node:crypto';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { createCipheriv, randomBytes } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import {
-  ISSUER,
-  RESOURCE,
-  ChatGPTError,
-  createAuthorization,
-  completeAuthorization,
-  validateCredentials,
-} from '../scripts/connect-chatgpt.mjs';
+import { AIError, RESOURCE } from '../src/lib/ai-provider';
 import {
   activeCredentials,
   connectionStatus,
@@ -28,183 +21,7 @@ import {
 import { defaultConfig } from '../src/lib/defaults';
 import type { Config } from '../src/lib/schema';
 
-const keys = generateKeyPairSync('rsa', { modulusLength: 2048 });
-const jwk = {
-  ...keys.publicKey.export({ format: 'jwk' }),
-  kid: 'test-key',
-  alg: 'RS256',
-  use: 'sig',
-};
-const directScopes =
-  'openid profile email offline_access resource.invoke chatgpt.tokens.use.direct';
-function jwt(claims: Record<string, unknown>) {
-  const header = Buffer.from(
-    JSON.stringify({ alg: 'RS256', kid: 'test-key' }),
-  ).toString('base64url');
-  const payload = Buffer.from(
-    JSON.stringify({
-      iss: ISSUER,
-      exp: Math.floor(Date.now() / 1000) + 3600,
-      ...claims,
-    }),
-  ).toString('base64url');
-  return `${header}.${payload}.${sign('RSA-SHA256', Buffer.from(`${header}.${payload}`), keys.privateKey).toString('base64url')}`;
-}
-function credentials(
-  client = 'oaiapp_a',
-  subject = 'account-a',
-  seconds = 3600,
-  scope = directScopes,
-  nonce = 'test-nonce',
-) {
-  return {
-    client_id: client,
-    id_token: jwt({
-      aud: client,
-      sub: subject,
-      email: `${subject}@example.test`,
-      nonce,
-    }),
-    access_token: jwt({
-      aud: RESOURCE,
-      sub: subject,
-      client_id: client,
-      scope,
-      exp: Math.floor(Date.now() / 1000) + seconds,
-    }),
-    refresh_token: 'private-refresh-token',
-    token_type: 'Bearer',
-    scope,
-  };
-}
 const json = (value: unknown, status = 200) => Response.json(value, { status });
-function identityFetch(url: string | URL | Request) {
-  const address = String(url);
-  if (address.endsWith('/.well-known/openid-configuration'))
-    return json({
-      issuer: ISSUER,
-      jwks_uri: `${ISSUER}/jwks`,
-      revocation_endpoint: `${ISSUER}/revoke`,
-    });
-  if (address === `${ISSUER}/jwks`) return json({ keys: [jwk] });
-  throw new Error(`Unexpected mock request: ${address}`);
-}
-const identity = (async (url) => identityFetch(url)) as typeof fetch;
-
-test('OAuth uses PKCE, validates state and issued registration, signature, nonce, identity, audience, and plan permission', async () => {
-  const attempt = createAuthorization(
-    'urn:uuid:test-host',
-    'http://127.0.0.1:1455/auth/callback',
-  );
-  const auth = new URL(attempt.url);
-  assert.equal(auth.searchParams.get('client_id'), 'dynamic_agent_client');
-  assert.equal(auth.searchParams.get('resource'), RESOURCE);
-  assert.equal(auth.searchParams.get('agent_name_hint'), 'The Directory');
-  assert.equal(auth.searchParams.get('code_challenge_method'), 'S256');
-  assert.notEqual(auth.searchParams.get('code_challenge'), attempt.verifier);
-  const mock = (async (url, init) => {
-    if (String(url).endsWith('/oauth/token')) {
-      const body = new URLSearchParams(init?.body as URLSearchParams);
-      assert.equal(body.get('client_id'), 'oaiapp_a');
-      assert.equal(body.get('code_verifier'), attempt.verifier);
-      assert.equal(body.get('redirect_uri'), attempt.redirectUri);
-      return json(
-        credentials('oaiapp_a', 'account-a', 3600, directScopes, attempt.nonce),
-      );
-    }
-    return identityFetch(url);
-  }) as typeof fetch;
-  const callback = `${attempt.redirectUri}?state=${attempt.state}&code=code&client_id=oaiapp_a`;
-  const saved = await completeAuthorization(attempt, callback, mock);
-  assert.equal(saved.subject, 'account-a');
-  assert.ok(saved.scopes.includes('chatgpt.tokens.use.direct'));
-  await assert.rejects(
-    completeAuthorization(
-      attempt,
-      callback.replace(attempt.state, 'wrong'),
-      mock,
-    ),
-    /state/,
-  );
-  await assert.rejects(
-    completeAuthorization(
-      attempt,
-      `${attempt.redirectUri}?state=${attempt.state}&code=code`,
-      mock,
-    ),
-    /registration/,
-  );
-  await assert.rejects(
-    validateCredentials(credentials(), { nonce: 'wrong' }, identity),
-    /verify/,
-  );
-  await assert.rejects(
-    validateCredentials(
-      {
-        ...credentials(),
-        access_token: jwt({
-          aud: 'wrong',
-          sub: 'account-a',
-          client_id: 'oaiapp_a',
-          scope: directScopes,
-        }),
-      },
-      {},
-      identity,
-    ),
-    /verify/,
-  );
-  await assert.rejects(
-    validateCredentials(
-      {
-        ...credentials(),
-        access_token: jwt({
-          aud: RESOURCE,
-          sub: 'account-b',
-          client_id: 'oaiapp_a',
-          scope: directScopes,
-        }),
-      },
-      {},
-      identity,
-    ),
-    /verify/,
-  );
-  await assert.rejects(
-    validateCredentials(
-      {
-        ...credentials(),
-        id_token: jwt({ aud: 'oaiapp_a', sub: 'account-a' }).replace(
-          /.$/,
-          (c) => (c === 'A' ? 'B' : 'A'),
-        ),
-      },
-      {},
-      identity,
-    ),
-    /verify/,
-  );
-  const declined = await validateCredentials(
-    credentials('oaiapp_a', 'account-a', 3600, 'openid profile email'),
-    {},
-    identity,
-  );
-  assert.ok(!declined.scopes.includes('chatgpt.tokens.use.direct'));
-  const returning = createAuthorization(
-    'urn:uuid:test-host',
-    attempt.redirectUri,
-    saved,
-  );
-  assert.equal(
-    new URL(returning.url).searchParams.get('client_id'),
-    'oaiapp_a',
-  );
-  assert.equal(
-    new URL(returning.url).searchParams.get('agent_name_hint'),
-    null,
-  );
-});
-
 function planFor(config: Config) {
   const { title, subtitle, theme, accent, columns, compact, widgets } = config;
   return {
@@ -281,7 +98,7 @@ function stream(events: unknown[], finish = true) {
     },
   );
 }
-test('streaming requires completed inference and surfaces late plan-limit failures instead of accepting partial output', async () => {
+test('streaming requires completed inference and surfaces late API quota failures instead of accepting partial output', async () => {
   const delta = {
     type: 'response.output_text.delta',
     delta: '{"name":"café"}',
@@ -303,15 +120,15 @@ test('streaming requires completed inference and surfaces late plan-limit failur
         {
           type: 'response.failed',
           response: {
-            error: { code: 'subscription_sharing_usage_limit_exceeded' },
+            error: { code: 'insufficient_quota' },
           },
         },
       ]),
     ),
     (error: unknown) =>
-      error instanceof ChatGPTError &&
+      error instanceof AIError &&
       error.status === 429 &&
-      error.code === 'subscription_sharing_usage_limit_exceeded' &&
+      error.code === 'insufficient_quota' &&
       error.requestId === 'request-test',
   );
   await assert.rejects(
@@ -320,109 +137,87 @@ test('streaming requires completed inference and surfaces late plan-limit failur
   );
 });
 
-test('connections isolate users, encrypt credentials, serialize rotating refreshes, revoke sessions, and keep inference previews unsaved', async () => {
+test('API keys isolate users, encrypt secrets, validate before saving, remove locally, and keep inference previews unsaved', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'directory-ai-'));
   const previousData = process.env.DATA_DIR,
     previousFetch = globalThis.fetch;
-  let permissionRemoved = false,
-    transientRefresh = false;
-  let renewals = 0,
-    revoke = true,
-    terminalRefresh = false,
+  const key = 'sk-test-private-key-123456';
+  let rejected = false,
     inference = false;
   const config = structuredClone(defaultConfig);
   config.customCss = 'private-css';
+  config.boards[0].notes = 'private-notes';
   config.boards[0].services[0].url =
     'https://admin:urlpassword-secret@example.test/path?token=query-secret#fragment-secret';
-  config.boards[0].notes = 'private-notes';
   globalThis.fetch = (async (url, init) => {
-    const address = String(url);
-    if (address.endsWith('/oauth/token')) {
-      const body = new URLSearchParams(init?.body as URLSearchParams);
-      assert.equal(body.get('grant_type'), 'refresh_token');
-      assert.equal(body.get('resource'), RESOURCE);
-      renewals++;
-      if (transientRefresh)
-        return json(
-          { error: { code: 'subscription_sharing_usage_unavailable' } },
-          503,
-        );
-      if (terminalRefresh) return json({ error: 'invalid_grant' }, 400);
+    assert.equal(
+      new Headers(init?.headers).get('Authorization'),
+      'Bearer ' + key,
+    );
+    if (String(url) === RESOURCE + '/models') {
+      if (rejected)
+        return json({ error: { code: 'invalid_api_key', message: key } }, 401);
       return json({
-        ...credentials(
-          body.get('client_id')!,
-          'account-a',
-          3600,
-          permissionRemoved ? 'openid profile email' : directScopes,
-        ),
-        refresh_token: 'rotated-private-token',
-      });
-    }
-    if (address === `${ISSUER}/revoke`)
-      return new Response(null, { status: revoke ? 200 : 503 });
-    if (address === `${RESOURCE}/models`)
-      return json({
-        models: [
-          {
-            slug: 'test-model',
-            display_name: 'Test Model',
-            visibility: 'list',
-          },
+        data: [
+          { id: 'gpt-test' },
+          { id: 'text-embedding-test' },
+          { id: 'gpt-audio-test' },
         ],
       });
-    if (address === `${RESOURCE}/responses`) {
-      inference = true;
-      const body = JSON.parse(init?.body as string);
-      assert.equal(body.store, false);
-      assert.equal(body.stream, true);
-      assert.equal(body.model, 'test-model');
-      assert.ok(body.instructions);
-      assert.ok(!JSON.stringify(body.input).includes('private-notes'));
-      assert.ok(!JSON.stringify(body.input).includes('private-css'));
-      assert.ok(!JSON.stringify(body.input).includes('private-refresh-token'));
-      for (const secret of [
-        'urlpassword-secret',
-        'query-secret',
-        'fragment-secret',
-      ])
-        assert.ok(!JSON.stringify(body.input).includes(secret));
-      return stream([
-        {
-          type: 'response.output_text.delta',
-          delta: JSON.stringify(planFor(config)),
-        },
-        { type: 'response.completed', response: { status: 'completed' } },
-      ]);
     }
-    return identityFetch(url);
+    assert.equal(String(url), RESOURCE + '/responses');
+    inference = true;
+    const body = JSON.parse(init?.body as string);
+    assert.equal(body.store, false);
+    assert.equal(body.stream, true);
+    assert.equal(body.model, 'gpt-test');
+    for (const secret of [
+      key,
+      'private-notes',
+      'private-css',
+      'urlpassword-secret',
+      'query-secret',
+      'fragment-secret',
+    ])
+      assert.ok(!JSON.stringify(body.input).includes(secret));
+    return stream([
+      {
+        type: 'response.output_text.delta',
+        delta: JSON.stringify(planFor(config)),
+      },
+      { type: 'response.completed', response: { status: 'completed' } },
+    ]);
   }) as typeof fetch;
   process.env.DATA_DIR = directory;
   try {
-    const userA = await importConnection(
-      'user-a',
-      credentials('oaiapp_a', 'account-a', 30),
+    rejected = true;
+    await assert.rejects(
+      importConnection('user-a', { apiKey: key, label: 'My key' }),
+      /rejected/,
     );
-    const accountA = userA.accounts[0].id;
-    assert.deepEqual(await connectionStatus('user-b'), { accounts: [] });
-    await assert.rejects(selectConnection('user-b', accountA), /Connect/);
-    const tokens = await Promise.all([
-      activeCredentials('user-a'),
-      activeCredentials('user-a'),
-    ]);
-    assert.equal(renewals, 1);
-    assert.equal(tokens[0].refresh_token, 'rotated-private-token');
-    const disk = await readFile(join(directory, 'ai-connections.json'), 'utf8');
-    assert.ok(!disk.includes('rotated-private-token'));
-    assert.ok(!disk.includes(tokens[0].access_token));
+    assert.deepEqual(await connectionStatus('user-a'), { accounts: [] });
+    rejected = false;
+    const status = await importConnection('user-a', {
+      apiKey: key,
+      label: 'My key',
+    });
+    const id = status.accounts[0].id;
+    assert.equal(status.accounts[0].active, true);
+    assert.ok(!JSON.stringify(status).includes(key));
     assert.ok(
-      !JSON.stringify(await connectionStatus('user-a')).includes(
-        'refresh_token',
-      ),
+      !(
+        await readFile(join(directory, 'ai-connections.json'), 'utf8')
+      ).includes(key),
     );
+    assert.deepEqual(await connectionStatus('user-b'), { accounts: [] });
+    await assert.rejects(selectConnection('user-b', id), /not found/);
+    await assert.rejects(disconnectConnection('user-b', id), /not found/);
+    await assert.rejects(activeCredentials('user-b'), /Add an OpenAI API key/);
+    assert.deepEqual(await activeCredentials('user-a'), { apiKey: key });
     const proposal = await proposeDashboard(
       'user-a',
-      'test-model',
-      'Organize services',
+      'gpt-test',
+      'Organize',
       config,
     );
     assert.ok(inference);
@@ -431,53 +226,49 @@ test('connections isolate users, encrypt credentials, serialize rotating refresh
       code: 'ENOENT',
     });
     await assert.rejects(
-      proposeDashboard('user-a', 'unknown-model', 'Arrange', config),
+      proposeDashboard('user-a', 'text-embedding-test', 'Organize', config),
       /available/,
     );
+    await importConnection('user-a', { apiKey: key, label: 'Renamed' });
+    assert.equal((await connectionStatus('user-a')).accounts.length, 1);
     assert.equal(
-      (await disconnectConnection('user-a', accountA)).revocationConfirmed,
-      true,
+      (await connectionStatus('user-a')).accounts[0].label,
+      'Renamed',
     );
-    await assert.rejects(activeCredentials('user-a'), /Connect/);
-    await importConnection('user-a', credentials('oaiapp_a', 'account-a', 30));
-    terminalRefresh = true;
-    await assert.rejects(activeCredentials('user-a'), /expired/);
-    assert.equal(
-      (await connectionStatus('user-a')).accounts[0].connected,
-      false,
+    await disconnectConnection('user-a', id);
+    assert.deepEqual(await connectionStatus('user-a'), { accounts: [] });
+    await assert.rejects(activeCredentials('user-a'), /Add an OpenAI API key/);
+    // Upgrades must ignore OAuth tokens and accept new API keys.
+    const storageKey = await readFile(join(directory, 'ai.key'));
+    const iv = randomBytes(12);
+    const cipher = createCipheriv('aes-256-gcm', storageKey, iv);
+    const encrypted = Buffer.concat([
+      cipher.update(
+        JSON.stringify({
+          version: 1,
+          hostId: 'old-host',
+          users: {
+            'user-a': {
+              activeId: 'legacy',
+              accounts: [{ credentials: { access_token: 'legacy-secret' } }],
+            },
+          },
+        }),
+      ),
+      cipher.final(),
+    ]);
+    await writeFile(
+      join(directory, 'ai-connections.json'),
+      JSON.stringify({
+        iv: iv.toString('base64'),
+        tag: cipher.getAuthTag().toString('base64'),
+        data: encrypted.toString('base64'),
+      }),
     );
-    await importConnection('user-a', credentials('oaiapp_a', 'account-a', 30));
-    transientRefresh = true;
-    await assert.rejects(activeCredentials('user-a'), /temporarily/);
-    assert.equal(
-      (await connectionStatus('user-a')).accounts[0].connected,
-      true,
-    );
-    transientRefresh = false;
-    terminalRefresh = false;
-    permissionRemoved = true;
-    await assert.rejects(activeCredentials('user-a'), /permission was removed/);
-    assert.equal(
-      (await connectionStatus('user-a')).accounts[0].connected,
-      true,
-    );
-    assert.equal(
-      (await connectionStatus('user-a')).accounts[0].planEnabled,
-      false,
-    );
-    permissionRemoved = false;
-    await importConnection('user-a', credentials());
-    revoke = false;
-    assert.equal(
-      (await disconnectConnection('user-a', accountA)).revocationConfirmed,
-      false,
-    );
-    const noPermission = await importConnection(
-      'user-b',
-      credentials('oaiapp_b', 'account-b', 3600, 'openid profile email'),
-    );
-    assert.equal(noPermission.accounts[0].planEnabled, false);
-    await assert.rejects(activeCredentials('user-b'), /permission/);
+    assert.deepEqual(await connectionStatus('user-a'), { accounts: [] });
+    await importConnection('user-a', { apiKey: key, label: 'After upgrade' });
+    assert.deepEqual(await activeCredentials('user-a'), { apiKey: key });
+    assert.deepEqual(await readFile(join(directory, 'ai.key')), storageKey);
   } finally {
     globalThis.fetch = previousFetch;
     if (previousData === undefined) delete process.env.DATA_DIR;

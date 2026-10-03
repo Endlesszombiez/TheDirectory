@@ -106,14 +106,14 @@ This endpoint checks that the web process is responding. Login and first-run acc
 
 Open **http://localhost:4321** in a browser on the same machine that runs Docker. Sign in using the username and password you saved in `.env`.
 
-- Use **Edit dashboard** to change the example service cards to your real homelab URLs, remove individual cards, or choose **Remove all services** to clear the current board.
-- Use **Customization** to adjust the layout, themes, widgets, and backgrounds.
-- Open **People & permissions** to create additional accounts. Use the **Viewer** role for people who should not edit your dashboard.
-- Open **My account** through your username in the sidebar to change your password or sign out.
+- Use **Edit** to change the example service cards to your real homelab URLs, remove individual cards, or choose **Remove all services** to clear the current board.
+- Use **Settings → Appearance** to adjust the layout, themes, widgets, and backgrounds.
+- Open **Settings → Users** to create additional accounts. Use the **Viewer** role for people who should not edit your dashboard.
+- Open **Settings → Account** or your username in the sidebar to change your password or sign out.
 
 The starter `.home` service addresses are examples. Docker does not create those services or DNS entries. Health checks run from inside the container, so monitored URLs must be reachable from the container; `localhost` in a service URL refers to the container itself, not another machine in your homelab.
 
-Once accounts exist, the bootstrap variables are ignored: changing `DASHBOARD_PASSWORD` in `.env` does not change an existing account's password. Use **My account**, the administrator's user management page, or the [account recovery procedure](#account-recovery).
+Once accounts exist, the bootstrap variables are ignored: changing `DASHBOARD_PASSWORD` in `.env` does not change an existing account's password. Use **Settings → Account**, the administrator's user management page, or the [account recovery procedure](#account-recovery).
 
 ### Step 8: Access an installation on a remote server
 
@@ -170,7 +170,7 @@ docker compose cp directory:/app/data ./directory-backup
 docker compose start directory
 ```
 
-Use a new destination folder for each backup. Store the backup privately: it includes account password hashes and hashed session records. **Export dashboard** in the app backs up dashboard configuration only; it does not include accounts or sessions.
+Use a new destination folder for each backup. Store the backup privately: it includes account password hashes and hashed session records. **Settings → Backup → Export JSON** in the app backs up dashboard configuration only; it does not include accounts or sessions.
 
 ### Docker troubleshooting
 
@@ -192,7 +192,7 @@ Use a new destination folder for each backup. Store the backup privately: it inc
 
 1. Set `APP_ORIGIN=https://lab.example.com` to your exact public browser origin, without a trailing slash or path.
 2. Put a TLS reverse proxy in front of the loopback port. `deploy/Caddyfile.example` shows a Caddy configuration for a proxy running on the Docker host; replace its hostname with yours. Forward the original Host header. For a proxy running in Docker, connect it to the app's Docker network and proxy to `directory:4321` instead.
-3. Sign in as the administrator and open **People & permissions** to create accounts. Give everyday users the **Viewer** role.
+3. Sign in as the administrator and open **Settings → Users** to create accounts. Give everyday users the **Viewer** role.
 
 Administrators edit every board, notes, appearance, backgrounds and custom CSS, import/export configuration, and manage users. Viewers can read all shared boards, service URLs, notes and status widgets and change their own password; they cannot edit configuration or manage accounts. The server checks permissions independently of the UI. There are no per-board private permissions yet. Dashboard login does not grant access to the linked services themselves.
 
@@ -204,7 +204,7 @@ Login attempts are limited to 15 per username per 15 minutes and 100 total per p
 
 ### Account recovery
 
-Users change their password in **My account**. Administrators can reset another account from **People & permissions**. If the administrator is locked out, stop the app, set the existing administrator's username and a new password in `.env`, and run:
+Users change their password in **Settings → Account**. Administrators can reset another account from **Settings → Users**. If the administrator is locked out, stop the app, set the existing administrator's username and a new password in `.env`, and run:
 
 ```sh
 docker compose stop directory
@@ -253,13 +253,13 @@ For a custom data directory, set `DATA_DIR`. Local development defaults to `./da
 ## Included
 
 - Multiple boards with editable HTTP/HTTPS service links, descriptions, categories, icons, and colors.
-- Drag-and-drop service ordering and keyboard-friendly ordering controls available through **Edit dashboard**. Dropping onto a card in another category moves the service to that category. Categories follow the first service in each category; ordering within a category follows the service list.
+- Drag-and-drop service ordering and keyboard-friendly ordering controls available through **Edit**. Dropping onto a card in another category moves the service to that category. Categories follow the first service in each category; ordering within a category follows the service list.
 - Dark/light appearance, four accent colors, and two to four service columns (responsive on smaller screens).
 - Custom welcome subtitle, compact cards, remote background images, and an advanced custom CSS editor. Custom CSS is shared with all dashboard users; grant editing privileges only to trusted people.
 - Search with Ctrl/Cmd+K, keyboard-accessible dialogs, and mobile navigation.
 - Local clock, server OS metrics, optional Docker container list, and board-specific notes.
 - Docker/Compose and Swarm service discovery with editable URL suggestions, selection, and duplicate-safe bulk import.
-- Optional per-user ChatGPT plan connections and prompt-based dashboard setup with preview and explicit Apply.
+- Optional per-user OpenAI API keys and prompt-based dashboard setup with preview and explicit Apply.
 - Opt-in server-side service health checks with latency, a 3.5-second timeout, bounded concurrency, and a 30-second cache. Checks run while a dashboard client is polling; this is not a historical uptime monitor. 2xx/3xx and authentication-required 401/403 responses count as reachable; redirects are not followed and TLS certificates are validated.
 - Validated configuration import/export, atomic JSON writes, and revision checks to prevent tabs overwriting each other's changes. Reload if another tab saves first.
 - Required session login, administrator/viewer roles, account management, session revocation, password changes, login throttling, same-origin mutation checks, and a public container health endpoint.
@@ -285,14 +285,17 @@ The URL must be reachable from the **browser**, not just the app container. `loc
 
 Portainer or Dockhand must permit iframe embedding from TheDirectory's origin. Their `X-Frame-Options` or CSP `frame-ancestors` headers may block it; configure the service or its reverse proxy as needed. TheDirectory does not bypass those policies or proxy the manager. Each manager retains its own authentication and permissions; TheDirectory's viewer role does not restrict actions inside the manager. Browser cookie restrictions, login-provider frame policies, and untrusted HTTPS certificates may also affect embedded login. If the view stays blank, use its troubleshooting section or **Open in new tab**.
 
-## Optional Docker integration
+## Docker integration
 
-The app reads `GET /containers/json?all=true` through the Unix socket named by `DOCKER_SOCKET`. On Linux, add a Compose override like:
+The supplied Compose deployment connects through a restricted Docker socket proxy by default. The proxy is on a private internal network, publishes no host ports, and permits container/service reads with write requests disabled. Run `docker compose up -d` after updating the Compose file to create the proxy and recreate the dashboard. Docker Desktop must use Linux containers; native Windows named pipes are not supported.
+
+The app reads `GET /containers/json?all=true` through the Unix socket named by `DOCKER_SOCKET`. For a direct socket connection instead, on Linux add a Compose override like:
 
 ```yaml
 services:
   directory:
     environment:
+      DOCKER_API_URL: ''
       DOCKER_SOCKET: /var/run/docker.sock
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -306,7 +309,7 @@ A read-only filesystem mount does **not** make the Docker API read-only. Access 
 
 ### Discover and import services
 
-Administrators can open **Set up dashboard → Discover services**, choose **Containers / Compose** or **Swarm services**, enter the Docker host address reachable from their browser (for example `http://nas.home`), and choose a destination board. The host address is used to suggest browser links; it does not change the backend Docker connection.
+Administrators can open **Discover → Discover services**, choose **Containers / Compose** or **Swarm services**, enter the Docker host address reachable from their browser (for example `http://nas.home`), and choose a destination board. The host address is used to suggest browser links; it does not change the backend Docker connection.
 
 Review suggested names, groups, and URLs, select services, and click **Import selected**. Existing URLs on the destination board are skipped. Health checks start disabled. A container without a published web port or explicit URL stays editable until you provide a browser URL; database and worker ports are not assumed to speak HTTP. Loopback-bound ports on a remote host require a reachable reverse-proxy URL. Discovery lists one connected Docker daemon; Swarm discovery requires a manager endpoint and lists its cluster services. Separate Docker hosts require separate deployments/connections; this release configures one endpoint per installation.
 
@@ -326,24 +329,19 @@ labels:
 
 ## Optional AI dashboard setup
 
-AI is optional. Discovery and manual editing work without an AI connection, and this application does not provide a shared AI billing account or silently fall back to API-key billing.
+AI is optional. Discovery and manual editing work without an AI connection.
 
-### Connect your own ChatGPT plan
+### Connect your own OpenAI API key
 
-1. Open **AI settings** from the sidebar or **My account**.
-2. Download the sign-in helper and run `node directory-chatgpt.mjs` on the computer running your browser. You need Node.js 22 or later there. Repository users can run `npm run connect-chatgpt` instead; the helper has no npm dependencies.
-3. Open the local address printed by the helper, choose **Continue with ChatGPT**, and grant **Use your ChatGPT plan**. Eligibility and usage limits are controlled by OpenAI; eligible Plus/Pro accounts can share their existing allowance.
-4. Import the protected JSON connection file whose path appears in the terminal into **AI settings** on your own dashboard, over HTTPS or localhost.
+1. Create an API key in your [OpenAI API project](https://platform.openai.com/api-keys) and enable API billing. ChatGPT subscriptions do not cover API usage.
+2. Open **AI settings**, enter a descriptive label and the API key, then select **Verify and save key**. Restricted keys need permission to list models and create responses.
+3. Return to **Discover → AI setup**, refresh the connection, and choose an available text model.
 
-The helper follows OpenAI's [open-source OAuth flow](https://developers.openai.com/siwc/token-sharing-open-source/sign-in), with a `127.0.0.1` callback, PKCE, state/nonce validation, and signed ID/access-token verification. For remote Docker installations it follows the documented [self-hosted credential-transfer approach](https://developers.openai.com/siwc/token-sharing-open-source/self-hosted-vms); a remote webpage cannot receive a callback addressed to the user's local computer. No partner client secret or operator API key is needed for this open-source flow. Availability remains subject to OpenAI's preview rollout and account/workspace policies.
-
-Use `node directory-chatgpt.mjs --profile another-account` (or `npm run connect-chatgpt -- --profile another-account`) for another account/workspace. Rerun a profile to reconnect its existing registration. The helper keeps its own stable local host identifier and saved registration under `~/.config/thedirectory/`. The server keeps a separate stable host identifier when importing credentials. Transferred sessions currently do not provide host-specific usage attribution/revocation. Each dashboard user can save up to ten registrations, select an active account, and disconnect it. Identity sign-in without plan permission is shown as disabled for AI usage.
-
-Connection files contain private tokens. Keep them out of source control, browser storage, logs, and support transcripts. The helper writes with owner-only permissions on Unix; protect the file with your account's filesystem permissions on Windows. Once imported, let the dashboard own refreshes; do not reuse the same credential session in another running app. Server connections are encrypted in `DATA_DIR/ai-connections.json` with a local `DATA_DIR/ai.key`; protect and back up both files together. Encryption does not protect credentials from someone who can read the key and the data directory. These files are excluded from dashboard exports. Disconnect attempts remote session revocation, clears local tokens, and reports when remote revocation could not be confirmed; you can also disconnect the app in ChatGPT Settings.
+Each dashboard user can save up to ten keys, choose an active key, and remove it. Keys are verified through OpenAI before saving, encrypted in DATA_DIR/ai-connections.json with DATA_DIR/ai.key, and never returned to the browser or included in dashboard exports. Protect and back up both files together. Submit keys only over HTTPS or localhost. Removing a key deletes it from this dashboard; revoke it in OpenAI project settings if needed. Existing ChatGPT connections are no longer used; add an API key after upgrading.
 
 ### Describe, preview, apply
 
-After importing real services, administrators can open **Set up dashboard → Set up with AI**, choose a model available to their connected ChatGPT account, and describe the desired boards, groups, names, icons, theme, and layout. The request sends their prompt and dashboard display metadata, including service URLs with credentials, query strings, and fragments removed, to OpenAI. Board notes, custom CSS, background URLs, and credentials are excluded from the prompt. Requests use the selected user's ChatGPT plan limits; manage app limits in [ChatGPT Settings → Usage](https://chatgpt.com/settings/usage).
+After importing real services, administrators can open **Discover → AI setup**, choose a model available to their saved API key, and describe the desired boards, groups, names, icons, theme, and layout. The request sends their prompt and dashboard display metadata, including service URLs with credentials, query strings, and fragments removed, to OpenAI. Board notes, custom CSS, background URLs, and credentials are excluded from the prompt. Requests use the selected user's OpenAI API limits; manage billing and project limits in [OpenAI API usage](https://platform.openai.com/usage).
 
 The proposal appears for review and is saved only after **Apply setup**. Validation requires every existing service exactly once and preserves its URL and health-check setting, as well as existing board notes, custom CSS, background, and configuration revision. Invalid, incomplete, or usage-limited responses leave the dashboard unchanged. New services must first be imported or added manually; AI cannot invent endpoints. Viewers can manage their own connections but cannot generate or apply dashboard changes.
 
@@ -358,7 +356,7 @@ The proposal appears for review and is saved only after **Apply setup**. Validat
 - `src/lib/docker.ts`, `discovery.ts`, `dashboard-setup.ts`: Docker transport, discovery, and bulk import.
 - `src/lib/ai-connections.ts`, `ai.ts`: protected per-user connections and validated AI proposals.
 - `src/components/DashboardSetup.tsx`, `AIConnections.tsx`: setup preview and connection interfaces.
-- `scripts/connect-chatgpt.mjs`: portable local OAuth sign-in helper.
+- `src/lib/ai-provider.ts`: OpenAI API authentication and provider errors.
 - `src/pages/api/`: configuration and status endpoints.
 - `src/middleware.ts`: authentication, authorization, origin checks and security headers.
 - `src/lib/auth.ts`: password hashing, account persistence, session validation and revocation.

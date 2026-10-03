@@ -140,7 +140,7 @@ export default function DashboardSetup({
       if (
         !connection.accounts.some(
           (a: AIConnectionStatus['accounts'][number]) =>
-            a.active && a.connected && a.planEnabled,
+            a.active && a.connected,
         )
       ) {
         setModels([]);
@@ -200,8 +200,7 @@ export default function DashboardSetup({
       >
         <div className="modal-heading">
           <div>
-            <div className="eyebrow">MAKE YOURSELF AT HOME</div>
-            <h2 id="setup-title">Set up your dashboard</h2>
+            <h2 id="setup-title">Add services</h2>
           </div>
           <button
             className="icon-button"
@@ -241,7 +240,7 @@ export default function DashboardSetup({
               setMessage('');
             }}
           >
-            <Sparkles size={16} /> Set up with AI
+            <Sparkles size={16} /> AI setup
           </button>
         </div>
         {(error || saveError) && (
@@ -261,8 +260,7 @@ export default function DashboardSetup({
             aria-labelledby="discover-tab"
           >
             <p className="setup-intro">
-              Find services on your connected Docker host. Review their browser
-              URLs and choose what to add. No AI subscription is required.
+              Find Docker services, review their URLs, and choose what to add.
             </p>
             <form
               className="setup-form"
@@ -312,9 +310,8 @@ export default function DashboardSetup({
                   disabled={disabled}
                 />
                 <small>
-                  The address your browser uses to reach the Docker host.
-                  Published ports are added to this address; it does not change
-                  the server’s Docker connection.
+                  Browser-accessible host address. Published ports are added
+                  automatically.
                 </small>
               </label>
               <button className="button primary" disabled={disabled}>
@@ -483,15 +480,14 @@ export default function DashboardSetup({
               adjust the dashboard’s appearance.
             </p>
             {busy && !connection && (
-              <p role="status">Loading your ChatGPT connection…</p>
+              <p role="status">Loading your OpenAI API key connection…</p>
             )}
-            {connection && (!activeAccount || !activeAccount.planEnabled) && (
+            {connection && !activeAccount && (
               <div className="setup-help">
-                <h3>Use your own ChatGPT plan</h3>
+                <h3>Use your own OpenAI API key</h3>
                 <p>
-                  Connect an eligible ChatGPT account and grant plan usage in AI
-                  settings, then return here. Service discovery and manual setup
-                  remain available.
+                  Add an OpenAI API key in AI settings, then return here.
+                  Service discovery and manual setup remain available.
                 </p>
                 <a className="button primary" href="/ai">
                   Open AI settings <ArrowRight size={15} />
@@ -505,7 +501,7 @@ export default function DashboardSetup({
                 </button>
               </div>
             )}
-            {activeAccount?.planEnabled && (
+            {activeAccount && (
               <>
                 <div className="setup-account">
                   <span>
@@ -560,12 +556,12 @@ export default function DashboardSetup({
                   </label>
                   <p className="setup-disclosure">
                     This sends your prompt and dashboard service names, URLs,
-                    and display settings to OpenAI using this account’s plan
-                    allowance. URL credentials, query strings, and fragments are
-                    removed. Board notes, custom CSS, and connection credentials
-                    are excluded from the prompt.{' '}
+                    and display settings to OpenAI using this key’s API billing.
+                    URL credentials, query strings, and fragments are removed.
+                    Board notes, custom CSS, and connection credentials are
+                    excluded from the prompt.{' '}
                     <a
-                      href="https://chatgpt.com/settings/usage"
+                      href="https://platform.openai.com/usage"
                       target="_blank"
                       rel="noreferrer"
                     >

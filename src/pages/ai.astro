@@ -1,8 +1,48 @@
 ---
 import AccountLayout from '../layouts/AccountLayout.astro';
 import AIConnections from '../components/AIConnections';
+import { readContainerManagers } from '../lib/container-managers';
+const admin = Astro.locals.user?.role === 'admin';
+const managers = readContainerManagers();
 ---
 
-<AccountLayout title="AI settings">
+<AccountLayout title="Connections" section="connections">
+  {admin && (
+    <section class="connection-settings">
+      <div class="settings-row">
+        <div>
+          <h3>Docker</h3>
+          <p>Import services from your Docker host.</p>
+        </div>
+        <a class="button" href="/?setup=discover">
+          Discover services
+        </a>
+      </div>
+      <details class="settings-advanced">
+        <summary>Docker & container manager setup</summary>
+        <p>
+          Configure <code>DOCKER_API_URL</code> or <code>DOCKER_SOCKET</code> on
+          your server, then restart. See the README for connection and
+          permission details.
+        </p>
+        {managers.map((manager) => (
+          <div class="manager-connection">
+            <strong>{manager.name}</strong>
+            <span class="role-badge">
+              {manager.url ? 'Connected' : 'Not configured'}
+            </span>
+            <p>
+              {manager.error || (
+                <>
+                  Set <code>{manager.envKey}</code> to a browser-accessible URL.
+                  The service must allow embedding and keeps its own login.
+                </>
+              )}
+            </p>
+          </div>
+        ))}
+      </details>
+    </section>
+  )}
   <AIConnections client:load />
 </AccountLayout>

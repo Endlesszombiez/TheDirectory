@@ -1,0 +1,19 @@
+---
+import AccountLayout from '../layouts/AccountLayout.astro';
+import DashboardSettings from '../components/DashboardSettings';
+import { readConfig } from '../lib/store';
+if (Astro.locals.user?.role !== 'admin') return Astro.redirect('/account');
+const requested = Astro.url.searchParams.get('section');
+const section =
+  requested === 'boards' || requested === 'backup' ? requested : 'appearance';
+const title = {
+  appearance: 'Appearance',
+  boards: 'Boards',
+  backup: 'Backup & restore',
+}[section];
+const config = await readConfig();
+---
+
+<AccountLayout title={title} section={section}>
+  <DashboardSettings initialConfig={config} section={section} client:load />
+</AccountLayout>

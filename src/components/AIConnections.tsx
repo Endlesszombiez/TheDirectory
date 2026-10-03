@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { Download, Upload, Unplug, Check } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { KeyRound, Unplug, Check } from 'lucide-react';
 import type { AIConnectionStatus } from '../lib/ai-connections';
 import '../styles/setup.css';
 export default function AIConnections() {
@@ -7,7 +7,8 @@ export default function AIConnections() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
-  const fileRef = useRef<HTMLInputElement>(null);
+  const [apiKey, setApiKey] = useState('');
+  const [label, setLabel] = useState('My OpenAI key');
   async function load() {
     try {
       const response = await fetch('/api/ai/connections');
@@ -41,14 +42,13 @@ export default function AIConnections() {
       if (!response.ok)
         throw new Error(data.error || 'Unable to update the connection.');
       setStatus(data);
+      if (body.action === 'import') setApiKey('');
       setMessage(
         body.action === 'disconnect'
-          ? data.revocationConfirmed
-            ? 'Disconnected and the renewable session was revoked.'
-            : 'Disconnected locally. Remote revocation could not be confirmed; disconnect this app in ChatGPT Settings → Security and login.'
+          ? 'API key removed locally. Revoke it in OpenAI project settings if needed.'
           : body.action === 'select'
-            ? 'Active ChatGPT account updated.'
-            : 'ChatGPT connection imported. Your dashboard can now use the permissions you granted.',
+            ? 'Active API key updated.'
+            : 'API key verified and saved.',
       );
     } catch (error) {
       setError((error as Error).message);
@@ -56,27 +56,12 @@ export default function AIConnections() {
       setBusy(false);
     }
   }
-  async function importFile(file?: File) {
-    if (!file) return;
-    try {
-      if (file.size > 128_000)
-        throw new Error('The connection file is too large.');
-      const credentials = JSON.parse(await file.text());
-      await act({ action: 'import', credentials });
-    } catch {
-      setError(
-        'Invalid connection file. Select the JSON file saved by the ChatGPT sign-in helper.',
-      );
-    } finally {
-      if (fileRef.current) fileRef.current.value = '';
-    }
-  }
   return (
     <div className="ai-connections">
+      <h3>OpenAI</h3>
       <p className="account-intro">
-        Connect your own eligible ChatGPT plan for dashboard setup. Requests use
-        your existing plan limits. Each dashboard user manages their own
-        connections.
+        Your personal API keys for AI setup. Usage is billed to your OpenAI
+        project.
       </p>
       {error && (
         <p className="alert" role="alert">
@@ -101,13 +86,7 @@ export default function AIConnections() {
           <article className="connection-entry" key={account.id}>
             <div>
               <strong>{account.label}</strong>
-              <p>
-                {account.connected
-                  ? account.planEnabled
-                    ? 'ChatGPT plan usage enabled'
-                    : 'Signed in; plan usage permission was not granted'
-                  : 'Disconnected — sign in again to reconnect'}
-              </p>
+              <p>OpenAI</p>
             </div>
             <div className="connection-actions">
               {account.active ? (
@@ -123,7 +102,7 @@ export default function AIConnections() {
                       void act({ action: 'select', id: account.id })
                     }
                   >
-                    Use this account
+                    Use this key
                   </button>
                 )
               )}
@@ -135,7 +114,7 @@ export default function AIConnections() {
                     void act({ action: 'disconnect', id: account.id })
                   }
                 >
-                  <Unplug size={14} /> Disconnect
+                  <Unplug size={14} /> Remove key
                 </button>
               )}
             </div>
@@ -143,74 +122,78 @@ export default function AIConnections() {
         ))}
       </div>
       <section className="setup-help">
-        <h2>Connect ChatGPT</h2>
+        <h2>Add API key</h2>
         <p>
-          For a self-hosted dashboard, complete sign-in on the computer running
-          your browser, then import the protected connection file here. You need
-          Node.js 22 or later on that computer.
+          Create a key in your{' '}
+          <a
+            href="https://platform.openai.com/api-keys"
+            target="_blank"
+            rel="noreferrer"
+          >
+            OpenAI API project ↗
+          </a>{' '}
+          with permission to list models and create responses. API billing is
+          separate from ChatGPT subscriptions.
         </p>
-        <ol>
-          <li>
-            <a
-              className="button"
-              href="/api/ai/helper"
-              download="directory-chatgpt.mjs"
-            >
-              <Download size={14} /> Download sign-in helper
-            </a>
-          </li>
-          <li>
-            In the download folder, run <code>node directory-chatgpt.mjs</code>.
-            Open the local address it prints and choose{' '}
-            <strong>Continue with ChatGPT</strong>.
-          </li>
-          <li>
-            Review and grant <strong>Use your ChatGPT plan</strong>, then select
-            the connection file whose path appears in the terminal.
-          </li>
-        </ol>
-        <p>
-          To add a different account or workspace, run{' '}
-          <code>node directory-chatgpt.mjs --profile another-account</code>. To
-          reconnect the same registration, rerun its existing profile.
-        </p>
-        <button
-          className="button primary"
-          disabled={busy}
-          onClick={() => fileRef.current?.click()}
+        <form
+          className="setup-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void act({ action: 'import', apiKey, label });
+          }}
         >
-          <Upload size={14} />{' '}
-          {busy ? 'Updating connection…' : 'Import ChatGPT connection'}
-        </button>
-        <input
-          ref={fileRef}
-          hidden
-          type="file"
-          accept="application/json,.json"
-          onChange={(event) => void importFile(event.target.files?.[0])}
-        />
+          <label>
+            Key label
+            <input
+              value={label}
+              onChange={(event) => setLabel(event.target.value)}
+              required
+              maxLength={80}
+              disabled={busy}
+            />
+          </label>
+          <label>
+            OpenAI API key
+            <input
+              type="password"
+              value={apiKey}
+              onChange={(event) => setApiKey(event.target.value)}
+              placeholder="sk-…"
+              autoComplete="off"
+              spellCheck={false}
+              required
+              maxLength={512}
+              disabled={busy}
+            />
+          </label>
+          <button
+            className="button primary"
+            disabled={busy || !apiKey.trim() || !label.trim()}
+          >
+            <KeyRound size={14} />{' '}
+            {busy ? 'Verifying key…' : 'Verify and save key'}
+          </button>
+        </form>
         <p className="account-help">
-          The file contains private credentials. Transfer it only to your own
-          dashboard over HTTPS or localhost. Credentials stay in protected
-          server storage and are excluded from dashboard exports. After
-          importing, the dashboard manages token refreshes.
+          Encrypted on the server and excluded from exports. Use HTTPS or
+          localhost.
         </p>
       </section>
       <p className="account-help">
         <a
-          href="https://chatgpt.com/settings/usage"
+          href="https://platform.openai.com/usage"
           target="_blank"
           rel="noreferrer"
         >
-          Manage ChatGPT usage and app limits ↗
+          Manage API usage ↗
         </a>{' '}
         ·{' '}
         <a
-          href="https://developers.openai.com/siwc/token-sharing-open-source"
+          href="https://developers.openai.com/api/reference/overview"
           target="_blank"
           rel="noreferrer"
         >
-          OpenAI connection documentation ↗
+          API documentation ↗
         </a>
       </p>
     </div>
