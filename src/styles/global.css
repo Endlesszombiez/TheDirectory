@@ -1561,3 +1561,16 @@ h1 {
   text-align: right;
   min-width: 0;
 }
+
+.render-log-list {
+  max-height: 480px;
+  overflow: auto;
+  margin-top: 16px;
+}
+.render-log-list pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border-bottom: 1px solid var(--border);
+  padding: 12px 0;
+  font-size: 12px;
+}

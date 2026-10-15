@@ -45,7 +45,8 @@ async function start(directory: string, extra: Record<string, string> = {}) {
   };
   for (let i = 0; i < 80; i++) {
     try {
-      if ((await fetch(`${origin}/api/health`)).ok) return { origin, stop };
+      if ((await fetch(`${origin}/api/health`)).ok)
+        return { origin, stop, output: () => output };
     } catch {}
     if (server.exitCode !== null) throw new Error(output);
     await new Promise((r) => setTimeout(r, 100));
@@ -55,6 +56,241 @@ async function start(directory: string, extra: Record<string, string> = {}) {
 }
 const cookieFrom = (response: Response) =>
   response.headers.get('set-cookie')!.split(';')[0];
+
+test('guest file sharing requires a PIN and isolates management from Directory accounts', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'directory-files-api-'));
+  let server = await start(directory);
+  try {
+    let origin = server.origin;
+    const request = (
+      action: string,
+      method = 'GET',
+      body?: BodyInit,
+      cookie?: string,
+      csrf = origin,
+    ) =>
+      fetch(`${origin}/api/files/${action}`, {
+        method,
+        body,
+        headers: {
+          ...(method === 'GET' ? {} : { Origin: csrf }),
+          ...(action.startsWith('upload?')
+            ? { 'Content-Type': 'application/octet-stream' }
+            : {}),
+          ...(cookie ? { Cookie: cookie } : {}),
+        },
+        redirect: 'manual',
+      }).catch((error) => {
+        throw new Error(`${method} files/${action} failed`, { cause: error });
+      });
+    const login = await fetch(`${origin}/api/auth/login`, {
+      method: 'POST',
+      redirect: 'manual',
+      headers: {
+        Origin: origin,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        username: 'tester',
+        password: 'integration-password',
+      }),
+    });
+    const admin = cookieFrom(login);
+    const json = (
+      action: string,
+      body: unknown,
+      cookie?: string,
+      method = 'POST',
+    ) =>
+      fetch(`${origin}/api/files/${action}`, {
+        method,
+        headers: {
+          Origin: origin,
+          'Content-Type': 'application/json',
+          ...(cookie ? { Cookie: cookie } : {}),
+        },
+        body: JSON.stringify(body),
+      });
+    assert.equal((await fetch(`${origin}/files`)).status, 200);
+    assert.equal((await request('list')).status, 401);
+    assert.equal((await request('download?path=secret.txt')).status, 401);
+    assert.equal(
+      (await request('upload?path=test.txt', 'POST', 'secret')).status,
+      401,
+    );
+    const config = {
+      pin: '123456',
+      maxFileMB: 1,
+      allowedExtensions: '.txt',
+      autoUpload: false,
+      showFileList: true,
+    };
+    assert.equal(
+      (await json('settings', config, undefined, 'PUT')).status,
+      403,
+    );
+    assert.equal((await json('settings', config, admin, 'PUT')).status, 200);
+    const status = await (await request('status')).json();
+    assert.equal(status.configured, true);
+    assert.equal(status.unlocked, false);
+    assert.equal('pinHash' in status, false);
+    assert.equal((await json('unlock', { pin: 'wrong' })).status, 401);
+    const unlocked = await json('unlock', { pin: config.pin });
+    assert.equal(unlocked.status, 200);
+    assert.match(unlocked.headers.get('set-cookie')!, /HttpOnly/i);
+    const guest = cookieFrom(unlocked);
+    assert.equal(
+      (await fetch(`${origin}/api/config`, { headers: { Cookie: guest } }))
+        .status,
+      401,
+    );
+    assert.equal((await json('settings', config, guest, 'PUT')).status, 403);
+    assert.equal(
+      (
+        await request(
+          'upload?path=test.txt',
+          'POST',
+          'secret',
+          guest,
+          'https://evil.example',
+        )
+      ).status,
+      403,
+    );
+    for (const path of [
+      '../secret.txt',
+      'a/../../secret.txt',
+      'a\\secret.txt',
+      'NUL.txt',
+      'a:secret.txt',
+      '/secret.txt',
+    ]) {
+      assert.equal(
+        (
+          await request(
+            `upload?path=${encodeURIComponent(path)}`,
+            'POST',
+            'secret',
+            guest,
+          )
+        ).status,
+        400,
+        path,
+      );
+      assert.equal(
+        (
+          await request(
+            `delete?path=${encodeURIComponent(path)}`,
+            'DELETE',
+            undefined,
+            guest,
+          )
+        ).status,
+        400,
+        path,
+      );
+    }
+    assert.equal(
+      (await request('upload?path=test.html', 'POST', '<script/>', guest))
+        .status,
+      415,
+    );
+    assert.equal(
+      (await request('upload?path=big.txt', 'POST', 'x'.repeat(1048577), guest))
+        .status,
+      413,
+    );
+    assert.equal(
+      (
+        await request(
+          'upload?path=folder/test.txt',
+          'POST',
+          'hello world',
+          guest,
+        )
+      ).status,
+      201,
+    );
+    assert.equal(
+      (await request('upload?path=folder/empty.txt', 'POST', '', guest)).status,
+      201,
+    );
+    assert.equal(
+      (await request('upload?path=folder/test.txt', 'POST', 'overwrite', guest))
+        .status,
+      409,
+    );
+    const listing = await (
+      await request('list', 'GET', undefined, guest)
+    ).json();
+    assert.equal(listing.totalFiles, 2);
+    assert.equal(listing.totalBytes, 11);
+    assert.ok(
+      listing.entries.some(
+        (e: { path: string; directory: boolean }) =>
+          e.path === 'folder' && e.directory,
+      ),
+    );
+    const download = await request(
+      'download?path=folder/test.txt',
+      'GET',
+      undefined,
+      guest,
+    );
+    assert.equal(download.status, 200);
+    assert.match(download.headers.get('content-disposition')!, /attachment/);
+    assert.equal(await download.text(), 'hello world');
+    assert.equal(
+      (await json('settings', { ...config, pin: '654321' }, admin, 'PUT'))
+        .status,
+      200,
+    );
+    assert.equal((await request('list', 'GET', undefined, guest)).status, 401);
+    const newGuest = cookieFrom(await json('unlock', { pin: '654321' }));
+    assert.equal(
+      (await request('delete?path=folder', 'DELETE', undefined, newGuest))
+        .status,
+      200,
+    );
+    assert.equal(
+      (await (await request('list', 'GET', undefined, newGuest)).json())
+        .totalFiles,
+      0,
+    );
+    assert.equal(
+      (await request('delete?path=', 'DELETE', undefined, newGuest)).status,
+      400,
+    );
+    assert.equal(
+      (await request('lock', 'POST', undefined, newGuest)).status,
+      200,
+    );
+    assert.equal(
+      (await request('list', 'GET', undefined, newGuest)).status,
+      401,
+    );
+    const pinCookie = cookieFrom(await json('unlock', { pin: '654321' }));
+    await server.stop();
+    server = await start(directory);
+    origin = server.origin;
+    assert.equal((await (await request('status')).json()).configured, true);
+    assert.equal(
+      (await request('list', 'GET', undefined, pinCookie)).status,
+      401,
+    );
+    const restored = cookieFrom(await json('unlock', { pin: '654321' }));
+    assert.equal(
+      (await request('list', 'GET', undefined, restored)).status,
+      200,
+    );
+  } catch (error) {
+    console.error(server.output());
+    throw error;
+  } finally {
+    await server.stop();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 test('uplink ingestion uses scoped bearer tokens while management retains sessions, administrator roles and origin checks', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'directory-uplink-api-'));

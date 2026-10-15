@@ -383,6 +383,35 @@ Cards show the latest deployment status, commit (when available), deployment cre
 
 Disconnecting removes the saved key but keeps imported cards. Revoke the key separately in Render if needed. Keys are encrypted on disk in `DATA_DIR/integrations.json`, using `DATA_DIR/integrations.key`; keep the key and encrypted file together in private full-data backups. Dashboard JSON exports contain service links and Render identifiers, but no API keys, uplink tokens, or uplink data. Encryption at rest does not protect against someone who can read both files.
 
+### Receive Render logs through a log drain
+
+The log drain is independent of the Render API key and data uplinks. Render sends custom destinations **TLS syslog**, not arbitrary HTTPS webhooks. The Directory accepts RFC5424 messages with RFC6587 octet-counted or newline framing. Logs are visible only to administrators under **Settings → Connections → Render log drain**; choose **Load received logs** or **Refresh logs**.
+
+1. Point a public hostname such as `logs.example.com` at the Directory host. Provision a public-CA TLS certificate for that hostname, including the full certificate chain. The Node process must be able to read the PEM certificate and private key.
+2. Set `RENDER_LOG_PORT=6514`, `RENDER_LOG_TLS_CERT=/path/to/fullchain.pem`, and `RENDER_LOG_TLS_KEY=/path/to/privkey.pem`. Set `RENDER_LOG_ALLOWED_IPS` to a comma-separated list of the sending services' Render outbound IP addresses/CIDRs, obtained from Render's dashboard. Configure the host firewall to permit those senders. The listener checks the actual TCP peer, so a TCP proxy must preserve sender addresses or enforce the sender allowlist itself. Do not permit an unrestricted address range. These addresses restrict senders but do not prove a workspace's identity; Render can share outbound ranges between customers.
+3. Restart with `npm start`. The production Docker image also starts the listener when configured. For development, run `npm run render:logs` alongside `npm run dev`. Run one listener per data directory. Changing or renewing certificates requires restarting the listener.
+4. Expose the chosen **TCP** port directly, separately from the dashboard HTTP port. In Render, open **Integrations → Observability → Log Streams → Set default**. Enter `logs.example.com:6514` as the Log Endpoint and leave Token blank. This receiver uses the sender allowlist rather than provider-specific token injection. Save, then emit a log from a service and refresh the received logs in Connections. Render does not emit logs for static sites.
+
+For the supplied Compose deployment, add a local override (adjust paths and sender CIDRs):
+
+```yaml
+services:
+  directory:
+    ports:
+      - '6514:6514'
+    volumes:
+      - ./render-tls:/run/render-tls:ro
+    environment:
+      RENDER_LOG_PORT: '6514'
+      RENDER_LOG_TLS_CERT: /run/render-tls/fullchain.pem
+      RENDER_LOG_TLS_KEY: /run/render-tls/privkey.pem
+      RENDER_LOG_ALLOWED_IPS: '203.0.113.10/32'
+```
+
+Replace the example address with the actual Render senders. Ensure the container's `node` user can read the mounted key. Apply with `docker compose up -d directory`. An HTTP reverse proxy or a LAN-only hostname is insufficient; Render must reach the TLS TCP listener. The normal browser APIs retain their session and origin requirements.
+
+The receiver retains the latest 500 messages in `DATA_DIR/render-logs.json`, with private file permissions where supported, and flushes at most once per second. This file contains **unencrypted log content**; protect the data directory and backups. Logs are excluded from dashboard exports and viewer APIs. Limits are 16 KiB per message, 32 simultaneous connections, and 1,000 messages/second total. Invalid, oversized, or over-limit streams are disconnected; this is bounded recent-log storage, not a durable log archive. TCP syslog has no application delivery acknowledgement, and crashes can lose the last second of messages. For long-term retention or high-volume logging, use a dedicated logging provider. No real Render delivery is verified until the public endpoint is configured and Render sends a message.
+
 ## Data uplinks
 
 Uplinks let a Render app, worker, or any other server publish a small summary to a dashboard widget, without database access. As an administrator:
@@ -415,6 +444,18 @@ Send a flat JSON object with 1–12 fields. Names must be 1–40 characters usin
 Widgets refresh with the dashboard's 30-second polling cycle. They show the last received time and become **Stale** when the configured threshold passes. Summaries persist through restarts; they are the latest values, not a historical metrics database. All signed-in dashboard users can see enabled uplink widgets, so send only data you intend to share with them. Revoke an uplink in Connections to immediately disable its token and delete its summary. Create a replacement uplink to rotate a lost token.
 
 ## Scope and next integrations
+
+### Native file sharing
+
+Open **Files** in the sidebar, or visit `/files`. Sign in as an administrator and expand **File sharing settings** to set a shared PIN or password (4–128 characters). Share the `/files` URL and PIN with guests; they do not need a Directory account. File access stays locked until a PIN is configured, including for signed-in users. The dashboard and account APIs still require their normal account sessions.
+
+Guests can select or drag in multiple files and folders, preserve folder paths, watch upload progress, cancel and retry uploads, search shared files, download individual files, and delete files or entire folders after confirmation. Empty files are supported. Existing filenames are protected: rename a duplicate before retrying. Retries restart the affected file; partial uploads are private and are removed when the request ends. Empty folders without files are not uploaded.
+
+Administrators can set a maximum size of 1–102,400 MB per file (default 1,024 MB), restrict extensions with a comma-separated list such as `.jpg,.png,.pdf`, enable automatic upload, or disable file listing/downloads/deletion for an upload-only drop box. Anyone with the PIN has the same file permissions, including deletion when enabled. The page follows the dashboard's theme and works on mobile.
+
+Files persist in `DATA_DIR/files` and settings in `DATA_DIR/files-settings.json`; the existing Docker data volume includes both. Uploads stream to disk rather than buffering whole files in memory. Keep your reverse proxy's request size and timeout limits compatible with the selected upload limit. Use a single application process with this local storage. Guest sessions expire after 12 hours, are cleared on restart, and are revoked immediately when the PIN changes. File contents remain on disk across restarts. The PIN is stored as a salted password hash; browser access uses an HttpOnly cookie. Failed PIN attempts are limited globally to 30 per 15 minutes and do not trust proxy headers.
+
+Optionally set `FILES_PIN` before first use instead of configuring a PIN in the UI. Once settings are saved, the persisted PIN takes precedence. Set `FILES_APPRISE_URL` to an Apprise **HTTP API endpoint**, such as `https://apprise.example/notify/mykey`, to receive upload notifications. Configure the desired notification services on that Apprise server. `FILES_APPRISE_MESSAGE` supports `{filename}`, `{size}`, and `{storage}`; sizes are in bytes. Notification failures do not fail uploads. Compose passes these variables through; no separate file-sharing service is required.
 
 This is a functional initial release, not full Homarr feature parity. Proxmox, Home Assistant, media, *arr, and other starter cards currently open their apps; they do not yet fetch those apps' APIs. Provider-specific API widgets, per-board permissions, SSO/MFA, drag-and-drop resizing, custom uploaded images/backgrounds, weather, additional provider secret storage, historical metrics, and localization remain future work. Prefer server-side provider adapters and keep credentials out of exported configuration when adding integrations.
 

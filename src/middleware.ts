@@ -9,9 +9,12 @@ export const onRequest = defineMiddleware(async (context, next) => {
     return new Response('Invalid URL', { status: 400 });
   }
   const api = path.startsWith('/api/');
-  const publicRoute = ['/api/health', '/login', '/api/auth/login'].includes(
-    path,
-  );
+  const publicRoute =
+    path === '/files' ||
+    /^\/api\/files\/(status|unlock|lock|settings|list|upload|download|delete)$/.test(
+      path,
+    ) ||
+    ['/api/health', '/login', '/api/auth/login'].includes(path);
   const mutation = !['GET', 'HEAD', 'OPTIONS'].includes(context.request.method);
   const expectedOrigin = process.env.APP_ORIGIN || context.url.origin;
   try {

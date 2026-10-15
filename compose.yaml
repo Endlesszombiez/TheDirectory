@@ -11,6 +11,9 @@ services:
       DASHBOARD_USERNAME: ${DASHBOARD_USERNAME:-}
       DASHBOARD_PASSWORD: ${DASHBOARD_PASSWORD:-}
       APP_ORIGIN: ${APP_ORIGIN:-http://localhost:4321}
+      FILES_PIN: ${FILES_PIN:-}
+      FILES_APPRISE_URL: ${FILES_APPRISE_URL:-}
+      FILES_APPRISE_MESSAGE: ${FILES_APPRISE_MESSAGE:-New file uploaded {filename} ({size} bytes), Storage used {storage} bytes}
       DOCKER_API_URL: ${DOCKER_API_URL-http://docker-proxy:2375}
       DOCKER_SOCKET: ${DOCKER_SOCKET:-}
       PORTAINER_HOME_URL: ${PORTAINER_HOME_URL:-}

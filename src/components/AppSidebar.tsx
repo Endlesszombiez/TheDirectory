@@ -5,6 +5,7 @@ import {
   Plus,
   Settings2,
   Container,
+  FolderUp,
 } from 'lucide-react';
 import type { Config } from '../lib/schema';
 import type { PublicUser } from '../lib/auth';
@@ -17,6 +18,7 @@ export default function AppSidebar({
   boardId,
   managerId,
   settings = false,
+  files = false,
   onBoard,
   onManager,
 }: {
@@ -26,6 +28,7 @@ export default function AppSidebar({
   boardId?: string;
   managerId?: string;
   settings?: boolean;
+  files?: boolean;
   onBoard?: (id: string) => void;
   onManager?: (manager: ContainerManager) => void;
 }) {
@@ -117,6 +120,14 @@ export default function AppSidebar({
         </>
       )}
       <div className="sidebar-bottom">
+        <a
+          className={`nav-item ${files ? 'active' : ''}`}
+          href="/files"
+          aria-current={files ? 'page' : undefined}
+        >
+          <FolderUp size={18} />
+          <span>Files</span>
+        </a>
         <a
           className={`nav-item ${settings ? 'active' : ''}`}
           href={user.role === 'admin' ? '/settings' : '/account'}

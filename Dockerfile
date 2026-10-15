@@ -18,4 +18,4 @@ USER node
 VOLUME ["/app/data"]
 EXPOSE 4321
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s CMD node -e "fetch('http://127.0.0.1:4321/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-CMD ["node", "dist/server/entry.mjs"]
+CMD ["node", "scripts/start.mjs"]

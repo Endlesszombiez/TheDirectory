@@ -2,6 +2,7 @@
 import AccountLayout from '../layouts/AccountLayout.astro';
 import AIConnections from '../components/AIConnections';
 import RenderConnections from '../components/RenderConnections';
+import RenderLogs from '../components/RenderLogs';
 import UplinkConnections from '../components/UplinkConnections';
 import { readConfig } from '../lib/store';
 import { readContainerManagers } from '../lib/container-managers';
@@ -51,5 +52,6 @@ const managers = readContainerManagers();
   {admin && (
     <RenderConnections initialConfig={await readConfig()} client:load />
   )}
+  {admin && <RenderLogs client:load />}
   {admin && <UplinkConnections client:load />}
 </AccountLayout>
