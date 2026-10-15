@@ -8,6 +8,44 @@ export type Health = {
   code?: number;
 };
 const cache = new Map<string, { at: number; health: Health }>();
+const pending = new Map<string, Promise<Health>>();
+async function checkUrl(url: string): Promise<Health> {
+  const cached = cache.get(url);
+  if (cached && Date.now() - cached.at < 30_000) return cached.health;
+  const existing = pending.get(url);
+  if (existing) return existing;
+  const task = (async () => {
+    const started = performance.now();
+    let health: Health;
+    try {
+      const response = await fetch(url, {
+        signal: AbortSignal.timeout(3500),
+        redirect: 'manual',
+      });
+      health = {
+        state:
+          response.status < 400 ||
+          response.status === 401 ||
+          response.status === 403
+            ? 'up'
+            : 'down',
+        latency: Math.round(performance.now() - started),
+        code: response.status,
+      };
+      await response.body?.cancel();
+    } catch {
+      health = { state: 'down' };
+    }
+    cache.set(url, { at: Date.now(), health });
+    return health;
+  })();
+  pending.set(url, task);
+  try {
+    return await task;
+  } finally {
+    pending.delete(url);
+  }
+}
 export async function checkServices(
   config: Config,
 ): Promise<Record<string, Health>> {
@@ -27,35 +65,7 @@ export async function checkServices(
           result[key] = { state: 'unchecked' };
           continue;
         }
-        const url = serviceDestination(service);
-        const cached = cache.get(url);
-        if (cached && Date.now() - cached.at < 30_000) {
-          result[key] = cached.health;
-          continue;
-        }
-        const started = performance.now();
-        let health: Health;
-        try {
-          const response = await fetch(url, {
-            signal: AbortSignal.timeout(3500),
-            redirect: 'manual',
-          });
-          health = {
-            state:
-              response.status < 400 ||
-              response.status === 401 ||
-              response.status === 403
-                ? 'up'
-                : 'down',
-            latency: Math.round(performance.now() - started),
-            code: response.status,
-          };
-          await response.body?.cancel();
-        } catch {
-          health = { state: 'down' };
-        }
-        cache.set(url, { at: Date.now(), health });
-        result[key] = health;
+        result[key] = await checkUrl(serviceDestination(service));
       }
     }),
   );

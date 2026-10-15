@@ -1,3 +1,4 @@
+import { readRequestText, RequestBodyTooLargeError } from './request-body';
 import type { APIContext } from 'astro';
 import {
   AuthError,
@@ -12,9 +13,13 @@ export async function formData(request: Request) {
       ?.startsWith('application/x-www-form-urlencoded')
   )
     throw new AuthError('Expected a form submission.');
-  const text = await request.text();
-  if (Buffer.byteLength(text) > 4096) throw new AuthError('Form is too large.');
-  return new URLSearchParams(text);
+  try {
+    return new URLSearchParams(await readRequestText(request, 4096));
+  } catch (error) {
+    if (error instanceof RequestBodyTooLargeError)
+      throw new AuthError('Form is too large.');
+    throw error;
+  }
 }
 export function setSession(context: APIContext, token: string) {
   context.cookies.set(SESSION_COOKIE, token, {

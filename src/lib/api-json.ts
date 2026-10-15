@@ -1,3 +1,4 @@
+import { readRequestText, RequestBodyTooLargeError } from './request-body';
 import { AIError } from './ai-provider';
 export async function requestJson(
   request: Request,
@@ -5,26 +6,17 @@ export async function requestJson(
 ): Promise<unknown> {
   if (!request.headers.get('content-type')?.startsWith('application/json'))
     throw new AIError('Expected JSON.', 415);
-  const reader = request.body?.getReader();
-  if (!reader) throw new AIError('Expected a request body.', 400);
-  const chunks: Uint8Array[] = [];
-  let size = 0;
+  if (!request.body) throw new AIError('Expected a request body.', 400);
+  let text: string;
   try {
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      size += value.byteLength;
-      if (size > limit) {
-        await reader.cancel();
-        throw new AIError('Request is too large.', 413);
-      }
-      chunks.push(value);
-    }
-  } finally {
-    reader.releaseLock();
+    text = await readRequestText(request, limit);
+  } catch (error) {
+    if (error instanceof RequestBodyTooLargeError)
+      throw new AIError('Request is too large.', 413);
+    throw error;
   }
   try {
-    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    return JSON.parse(text);
   } catch {
     throw new AIError('Invalid JSON.', 400);
   }

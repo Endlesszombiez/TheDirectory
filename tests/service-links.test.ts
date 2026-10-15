@@ -42,12 +42,17 @@ test('legacy services keep their destination and dual links favor the access env
     '172.16.0.2',
     'localhost',
     'server.home',
+    'home.arpa',
+    'dashboard.home.arpa',
+    'DASHBOARD.HOME.ARPA',
     '[::1]',
     '[fd00::3]',
   ])
     assert.equal(isLocalHostname(host), true, host);
   for (const host of [
     'service.com',
+    'nothome.arpa',
+    'dashboard.home.arpa.example.com',
     '172.32.0.3',
     '8.8.8.8',
     '[2606:4700::1111]',

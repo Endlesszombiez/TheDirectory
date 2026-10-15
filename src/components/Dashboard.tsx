@@ -28,7 +28,6 @@ import {
   Play,
   Container,
   StickyNote,
-  Clock3,
   Pencil,
   Sparkles,
 } from 'lucide-react';
@@ -37,6 +36,7 @@ import type { PublicUser } from '../lib/auth';
 import DashboardSetup from './DashboardSetup';
 import AppSidebar from './AppSidebar';
 import ServiceIcon from './ServiceIcon';
+import ClockWidget from './ClockWidget';
 import {
   isLocalHostname,
   serviceDestinations,
@@ -123,7 +123,6 @@ export default function Dashboard({
   const [service, setService] = useState<Service | null>(null);
   const [status, setStatus] = useState<Status | null>(null);
   const [statusError, setStatusError] = useState(false);
-  const [now, setNow] = useState<Date | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
@@ -174,8 +173,6 @@ export default function Dashboard({
     if (requestedManager) setSelectedManager(requestedManager);
     if (canEdit && params.get('setup') === 'discover') setSetup(true);
     void refresh();
-    setNow(new Date());
-    const timer = setInterval(() => setNow(new Date()), 1000);
     const poll = setInterval(() => void refresh(), 30_000);
     const key = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key === 'k') {
@@ -191,7 +188,6 @@ export default function Dashboard({
     };
     window.addEventListener('keydown', key);
     return () => {
-      clearInterval(timer);
       clearInterval(poll);
       window.removeEventListener('keydown', key);
     };
@@ -318,12 +314,6 @@ export default function Dashboard({
     [list[index], list[neighbor]] = [list[neighbor], list[index]];
     void persist(updateBoard(list));
   }
-  const time =
-    now?.toLocaleTimeString([], {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    }) || '--:--';
 
   return (
     <div
@@ -741,23 +731,7 @@ export default function Dashboard({
                     <div className="widget-section-label">Host & notes</div>
                     {config.widgets.map((widget) =>
                       widget === 'clock' ? (
-                        <section className="widget clock-widget" key={widget}>
-                          <div className="widget-heading">
-                            <span>LOCAL TIME</span>
-                            <Clock3 size={15} />
-                          </div>
-                          <div className="clock-time">
-                            {time}
-                            <span className="clock-dot" />
-                          </div>
-                          <p>
-                            {now?.toLocaleDateString([], {
-                              weekday: 'long',
-                              month: 'long',
-                              day: 'numeric',
-                            }) || 'Your local time'}
-                          </p>
-                        </section>
+                        <ClockWidget key={widget} />
                       ) : widget === 'system' ? (
                         <section className="widget" key={widget}>
                           <div className="widget-heading">

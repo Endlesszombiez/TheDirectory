@@ -8,6 +8,8 @@ export function isLocalHostname(hostname: string): boolean {
     host.endsWith('.localhost') ||
     host.endsWith('.local') ||
     host.endsWith('.home') ||
+    host === 'home.arpa' ||
+    host.endsWith('.home.arpa') ||
     host.endsWith('.lan') ||
     (!host.includes('.') && !host.includes(':'))
   )

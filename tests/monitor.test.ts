@@ -54,3 +54,59 @@ test('Docker is opt-in and reports unavailable sockets', async () => {
     else process.env.DOCKER_SOCKET = previous;
   }
 });
+
+test('duplicate cards and simultaneous polls share in-flight checks and cache failures', async () => {
+  let hits = 0;
+  const server = createServer((request, response) => {
+    hits++;
+    setTimeout(() => {
+      response.writeHead(request.url === '/broken' ? 503 : 200);
+      response.end('test');
+    }, 30);
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const config = structuredClone(defaultConfig);
+    config.boards = [config.boards[0]];
+    config.boards[0].services = [0, 1, 2].map((i) => ({
+      ...defaultConfig.boards[0].services[0],
+      id: String(i),
+      url: base,
+      localUrl: base,
+      webUrl: '',
+      check: true,
+    }));
+    const results = await Promise.all([
+      checkServices(config),
+      checkServices(config),
+    ]);
+    assert.equal(hits, 1);
+    for (const result of results) {
+      assert.equal(Object.keys(result).length, 3);
+      assert.ok(Object.values(result).every((health) => health.state === 'up'));
+    }
+    await checkServices(config);
+    assert.equal(hits, 1);
+    for (const service of config.boards[0].services) {
+      service.url = service.localUrl = `${base}/broken`;
+    }
+    const failures = await Promise.all([
+      checkServices(config),
+      checkServices(config),
+    ]);
+    assert.equal(hits, 2);
+    assert.ok(
+      failures.every((result) =>
+        Object.values(result).every(
+          (health) => health.state === 'down' && health.code === 503,
+        ),
+      ),
+    );
+    await checkServices(config);
+    assert.equal(hits, 2);
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
