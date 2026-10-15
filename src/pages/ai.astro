@@ -1,6 +1,9 @@
 ---
 import AccountLayout from '../layouts/AccountLayout.astro';
 import AIConnections from '../components/AIConnections';
+import RenderConnections from '../components/RenderConnections';
+import UplinkConnections from '../components/UplinkConnections';
+import { readConfig } from '../lib/store';
 import { readContainerManagers } from '../lib/container-managers';
 const admin = Astro.locals.user?.role === 'admin';
 const managers = readContainerManagers();
@@ -45,4 +48,8 @@ const managers = readContainerManagers();
     </section>
   )}
   <AIConnections client:load />
+  {admin && (
+    <RenderConnections initialConfig={await readConfig()} client:load />
+  )}
+  {admin && <UplinkConnections client:load />}
 </AccountLayout>

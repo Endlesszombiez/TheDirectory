@@ -204,7 +204,7 @@ export default function DashboardSettings({
             <fieldset>
               <legend>Widgets</legend>
               <div className="widget-options">
-                {['clock', 'system', 'docker', 'notes'].map((w) => (
+                {['clock', 'system', 'docker', 'notes', 'uplinks'].map((w) => (
                   <label className="checkbox-label" key={w}>
                     <input
                       name="widgets"

@@ -41,6 +41,14 @@ export const onRequest = defineMiddleware(async (context, next) => {
       response.headers.set('Strict-Transport-Security', 'max-age=31536000');
     return response;
   };
+  // Machine-to-machine ingestion uses its own bearer token, never a session.
+  // Only this exact POST route can omit Origin; browser mutations retain CSRF checks.
+  if (
+    path === '/api/uplinks/receive' &&
+    context.request.method === 'POST' &&
+    !context.request.headers.has('origin')
+  )
+    return finish(await next());
   if (mutation && context.request.headers.get('origin') !== expectedOrigin)
     return finish(Response.json({ error: 'Invalid origin' }, { status: 403 }));
   context.locals.user = null;

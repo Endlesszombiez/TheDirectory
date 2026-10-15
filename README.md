@@ -373,6 +373,47 @@ The page and API are server-rendered with Astro's standalone Node adapter. React
 
 Health checks intentionally reach private-network URLs so the app can monitor a homelab. Only grant edit access to trusted people. Network policy should restrict what the container can reach if deployed on a shared or exposed network.
 
+## Render connection
+
+Open **Settings → Connections → Render** as an administrator. Create an API key in [Render account settings](https://dashboard.render.com/u/settings#api-keys), paste it into the password field, and choose **Connect Render**. The server verifies the key before saving it. Select a destination board, check the services you want, and import them. Existing cards are preserved; importing the same Render service into the same board again does not duplicate it. Discovery supports up to 1,000 services per account, and each board can contain up to 100 cards. If another tab saves changes, reload Connections before importing.
+
+Public services link to their web URL. Workers, cron jobs, and private services without a public URL link to Render's dashboard. Every imported card also has a Render dashboard link. HTTP health checks are initially disabled so polling does not wake idle apps; enable them per card if desired. A deployment marked live is not a replacement for an HTTP health check.
+
+Cards show the latest deployment status, commit (when available), deployment creation time, and last successful check time. Deployment requests are cached for 60 seconds and shared across duplicate cards and simultaneous polls. Errors retain the last known deployment with a visible warning. This integration only reads Render: it does not deploy, restart, or modify remote resources. API access follows the connected key's permissions. The connection is shared across this Directory installation; all signed-in users can see the imported cards and deployment summaries.
+
+Disconnecting removes the saved key but keeps imported cards. Revoke the key separately in Render if needed. Keys are encrypted on disk in `DATA_DIR/integrations.json`, using `DATA_DIR/integrations.key`; keep the key and encrypted file together in private full-data backups. Dashboard JSON exports contain service links and Render identifiers, but no API keys, uplink tokens, or uplink data. Encryption at rest does not protect against someone who can read both files.
+
+## Data uplinks
+
+Uplinks let a Render app, worker, or any other server publish a small summary to a dashboard widget, without database access. As an administrator:
+
+1. Open **Settings → Connections → Data uplinks**. Enter an app name and a stale threshold (1–1,440 minutes), then create the uplink. Up to 20 uplinks can exist.
+2. Save the token immediately; it is shown once. In your Render service's environment, set `DIRECTORY_UPLINK_TOKEN` to the token and `DIRECTORY_UPLINK_URL` to `https://your-directory.example.com/api/uplinks/receive`.
+3. Enable **uplinks** under **Settings → Appearance → Widgets** and save.
+4. Send updates from your app's server process, for example with Node.js:
+
+```js
+const response = await fetch(process.env.DIRECTORY_UPLINK_URL, {
+  method: 'POST',
+  headers: {
+    Authorization: 'Bearer ' + process.env.DIRECTORY_UPLINK_TOKEN,
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    jobsProcessed: 1240,
+    queueDepth: 8,
+    lastRun: new Date().toISOString(),
+  }),
+});
+if (!response.ok) throw new Error(`Uplink failed: ${response.status}`);
+```
+
+The Directory must be reachable from the sending server over HTTPS. A private LAN-only dashboard needs a reachable ingress or network connection before Render can send to it. No browser login cookie or `Origin` header is needed for server-to-server ingestion; a valid bearer token is required on every update. Other APIs still require their normal sessions and origin checks. A token can write only to its assigned uplink; it cannot read the dashboard or change settings.
+
+Send a flat JSON object with 1–12 fields. Names must be 1–40 characters using letters, numbers, spaces, underscores, periods, or dashes. Values can be strings (up to 200 characters), finite numbers, booleans, or null. Nested objects and arrays are rejected; the entire request body must be at most 4,096 bytes. Each update replaces the previous summary and receives a server timestamp. Send at most once every five seconds per token; faster updates return HTTP 429 with `Retry-After: 5`. Validation errors return 400, missing/invalid/revoked tokens return 401, and oversized bodies return 413.
+
+Widgets refresh with the dashboard's 30-second polling cycle. They show the last received time and become **Stale** when the configured threshold passes. Summaries persist through restarts; they are the latest values, not a historical metrics database. All signed-in dashboard users can see enabled uplink widgets, so send only data you intend to share with them. Revoke an uplink in Connections to immediately disable its token and delete its summary. Create a replacement uplink to rotate a lost token.
+
 ## Scope and next integrations
 
 This is a functional initial release, not full Homarr feature parity. Proxmox, Home Assistant, media, *arr, and other starter cards currently open their apps; they do not yet fetch those apps' APIs. Provider-specific API widgets, per-board permissions, SSO/MFA, drag-and-drop resizing, custom uploaded images/backgrounds, weather, additional provider secret storage, historical metrics, and localization remain future work. Prefer server-side provider adapters and keep credentials out of exported configuration when adding integrations.

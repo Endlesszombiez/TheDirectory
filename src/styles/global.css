@@ -1488,3 +1488,76 @@ h1 {
   width: 22px;
   height: 22px;
 }
+
+.render-connections,
+.uplink-connections {
+  margin-top: 28px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+}
+.render-service-list {
+  max-height: 360px;
+  overflow: auto;
+  margin: 16px 0;
+}
+.render-service-list .checkbox-label {
+  padding: 10px 0;
+}
+.render-service-list small {
+  display: block;
+  color: var(--muted);
+  margin-top: 4px;
+}
+.uplink-secret {
+  padding: 16px;
+  margin: 18px 0;
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+}
+.uplink-connections pre {
+  overflow: auto;
+  padding: 12px;
+  max-width: 100%;
+  font-size: 12px;
+}
+.render-deployment {
+  display: grid;
+  gap: 5px;
+  padding: 0 16px 16px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.render-deployment a {
+  color: var(--accent);
+}
+.render-deployment small {
+  color: var(--muted);
+}
+.integration-error,
+.render-deployment .integration-error {
+  color: var(--danger, #ee8c85);
+}
+.uplink-summary {
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+  margin-top: 14px;
+  overflow-wrap: anywhere;
+}
+.uplink-summary dl {
+  display: grid;
+  gap: 8px;
+  font-size: 12px;
+}
+.uplink-summary dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.uplink-summary dt {
+  color: var(--muted);
+}
+.uplink-summary dd {
+  margin: 0;
+  text-align: right;
+  min-width: 0;
+}

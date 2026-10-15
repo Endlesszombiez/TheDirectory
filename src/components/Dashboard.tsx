@@ -37,6 +37,9 @@ import DashboardSetup from './DashboardSetup';
 import AppSidebar from './AppSidebar';
 import ServiceIcon from './ServiceIcon';
 import ClockWidget from './ClockWidget';
+import { RenderDeployment, UplinksWidget } from './CloudWidgets';
+import type { RenderDeploymentStatus } from '../lib/render';
+import type { IntegrationStatus } from '../lib/integrations';
 import {
   isLocalHostname,
   serviceDestinations,
@@ -60,6 +63,12 @@ const icons = {
   globe: Globe,
 };
 type Status = {
+  render: {
+    configured: boolean;
+    services: Record<string, RenderDeploymentStatus>;
+  };
+  uplinks: IntegrationStatus['uplinks'];
+  uplinksError?: string;
   services: Record<
     string,
     { state: 'up' | 'down' | 'unchecked'; latency?: number; code?: number }
@@ -657,6 +666,16 @@ export default function Dashboard({
                                     </span>
                                   )}
                                 </div>
+                                {s.renderServiceId && (
+                                  <RenderDeployment
+                                    id={s.renderServiceId}
+                                    dashboardUrl={s.renderDashboardUrl}
+                                    connected={!!status?.render.configured}
+                                    status={
+                                      status?.render.services[s.renderServiceId]
+                                    }
+                                  />
+                                )}
                                 {editing && (
                                   <div className="card-edit">
                                     <button
@@ -730,7 +749,18 @@ export default function Dashboard({
                   <aside className="widgets" aria-label="Dashboard widgets">
                     <div className="widget-section-label">Host & notes</div>
                     {config.widgets.map((widget) =>
-                      widget === 'clock' ? (
+                      widget === 'uplinks' ? (
+                        <UplinksWidget
+                          key={widget}
+                          uplinks={status?.uplinks || []}
+                          error={
+                            statusError
+                              ? 'Dashboard updates unavailable. Values may be stale.'
+                              : status?.uplinksError
+                          }
+                          loading={!status && !statusError}
+                        />
+                      ) : widget === 'clock' ? (
                         <ClockWidget key={widget} />
                       ) : widget === 'system' ? (
                         <section className="widget" key={widget}>

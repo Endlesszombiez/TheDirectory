@@ -1,6 +1,26 @@
 import { z } from 'zod';
 
 export const serviceSchema = z.object({
+  renderServiceId: z
+    .string()
+    .regex(/^srv-[a-z0-9-]+$/)
+    .max(100)
+    .optional(),
+  renderDashboardUrl: z
+    .url()
+    .max(2048)
+    .refine((value) => {
+      if (!URL.canParse(value)) return false;
+      const url = new URL(value);
+      return (
+        url.protocol === 'https:' &&
+        url.hostname === 'dashboard.render.com' &&
+        !url.username &&
+        !url.password &&
+        !url.port
+      );
+    })
+    .optional(),
   id: z.string().min(1).max(100),
   name: z.string().min(1).max(80),
   description: z.string().max(160),
@@ -84,8 +104,8 @@ export const configSchema = z
       .default(''),
     customCss: z.string().max(12000).default(''),
     widgets: z
-      .array(z.enum(['clock', 'system', 'docker', 'notes']))
-      .max(4)
+      .array(z.enum(['clock', 'system', 'docker', 'notes', 'uplinks']))
+      .max(5)
       .refine((v) => new Set(v).size === v.length),
     boards: z.array(boardSchema).min(1).max(12),
   })

@@ -56,6 +56,238 @@ async function start(directory: string, extra: Record<string, string> = {}) {
 const cookieFrom = (response: Response) =>
   response.headers.get('set-cookie')!.split(';')[0];
 
+test('uplink ingestion uses scoped bearer tokens while management retains sessions, administrator roles and origin checks', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'directory-uplink-api-'));
+  let server = await start(directory);
+  try {
+    let origin = server.origin;
+    const request = (path: string, init: RequestInit = {}) =>
+      fetch(`${origin}${path}`, { redirect: 'manual', ...init });
+    const login = await request('/api/auth/login', {
+      method: 'POST',
+      headers: {
+        Origin: origin,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        username: 'tester',
+        password: 'integration-password',
+      }),
+    });
+    const admin = cookieFrom(login);
+    const connectionsPage = await (
+      await request('/ai', { headers: { Cookie: admin } })
+    ).text();
+    assert.match(connectionsPage, /Render API key/);
+    assert.match(connectionsPage, /Data uplinks/);
+    const post = (
+      path: string,
+      body: unknown,
+      extra: Record<string, string> = {},
+    ) =>
+      request(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...extra },
+        body: JSON.stringify(body),
+      });
+    for (const path of ['/api/render', '/api/uplinks'])
+      assert.equal((await request(path)).status, 401);
+    assert.equal(
+      (
+        await post(
+          '/api/uplinks',
+          { action: 'create', name: 'Worker', staleAfter: 60 },
+          { Cookie: admin },
+        )
+      ).status,
+      403,
+    );
+    const response = await post(
+      '/api/uplinks',
+      { action: 'create', name: 'Worker', staleAfter: 60 },
+      { Cookie: admin, Origin: origin },
+    );
+    assert.equal(response.status, 200);
+    const { created } = await response.json();
+    const tokenHeaders = { Authorization: `Bearer ${created.token}` };
+    assert.equal((await post('/api/uplinks/receive', { jobs: 2 })).status, 401);
+    assert.equal(
+      (
+        await post(
+          '/api/uplinks/receive',
+          { jobs: 2 },
+          { Authorization: 'Bearer invalid' },
+        )
+      ).status,
+      401,
+    );
+    assert.equal(
+      (
+        await post(
+          '/api/uplinks/receive',
+          { jobs: 2 },
+          { ...tokenHeaders, Origin: 'https://evil.example' },
+        )
+      ).status,
+      403,
+    );
+    assert.equal((await post('/api/config', {}, tokenHeaders)).status, 403);
+    assert.equal(
+      (await request('/api/config', { headers: tokenHeaders })).status,
+      401,
+    );
+    assert.equal(
+      (
+        await post(
+          '/api/uplinks/receive',
+          { nested: { jobs: 2 } },
+          tokenHeaders,
+        )
+      ).status,
+      400,
+    );
+    assert.equal(
+      (
+        await post(
+          '/api/uplinks/receive',
+          { big: 'a'.repeat(4100) },
+          tokenHeaders,
+        )
+      ).status,
+      413,
+    );
+    assert.equal(
+      (
+        await post(
+          '/api/uplinks/receive',
+          { jobs: 2, active: true },
+          tokenHeaders,
+        )
+      ).status,
+      200,
+    );
+    assert.equal(
+      (await post('/api/uplinks/receive', { jobs: 3 }, tokenHeaders)).status,
+      429,
+    );
+    const read = await request('/api/uplinks', { headers: { Cookie: admin } });
+    const status = await read.json();
+    assert.equal(status.uplinks[0].values.jobs, 2);
+    assert.equal('tokenHash' in status.uplinks[0], false);
+    assert.equal(JSON.stringify(status).includes(created.token), false);
+    const config = await (
+      await request('/api/config', { headers: { Cookie: admin } })
+    ).json();
+    assert.equal(
+      (
+        await request('/api/config', {
+          method: 'PUT',
+          headers: {
+            Cookie: admin,
+            Origin: origin,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ ...config, widgets: ['uplinks'] }),
+        })
+      ).status,
+      200,
+    );
+    const dashboard = await (
+      await request('/api/status', { headers: { Cookie: admin } })
+    ).json();
+    assert.equal(dashboard.uplinks[0].values.jobs, 2);
+    assert.equal(JSON.stringify(dashboard).includes(created.token), false);
+    const user = await request('/api/users', {
+      method: 'POST',
+      headers: {
+        Cookie: admin,
+        Origin: origin,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        action: 'create',
+        username: 'uplinkviewer',
+        password: 'viewer-password',
+        role: 'viewer',
+      }),
+    });
+    assert.equal(user.status, 303);
+    const viewerLogin = await request('/api/auth/login', {
+      method: 'POST',
+      headers: {
+        Origin: origin,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        username: 'uplinkviewer',
+        password: 'viewer-password',
+      }),
+    });
+    const viewer = cookieFrom(viewerLogin);
+    const viewerPage = await (
+      await request('/ai', { headers: { Cookie: viewer } })
+    ).text();
+    assert.equal(viewerPage.includes('Render API key'), false);
+    assert.equal(viewerPage.includes('Create uplink'), false);
+    for (const path of ['/api/render', '/api/uplinks']) {
+      assert.equal(
+        (await request(path, { headers: { Cookie: viewer } })).status,
+        403,
+      );
+      assert.equal(
+        (
+          await post(
+            path,
+            { action: 'disconnect' },
+            { Cookie: viewer, Origin: origin },
+          )
+        ).status,
+        403,
+      );
+    }
+    assert.equal(
+      (await request('/api/status', { headers: { Cookie: viewer } })).status,
+      200,
+    );
+    await server.stop();
+    server = await start(directory);
+    origin = server.origin;
+    const signedIn = await request('/api/auth/login', {
+      method: 'POST',
+      headers: {
+        Origin: origin,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        username: 'tester',
+        password: 'integration-password',
+      }),
+    });
+    const restartedAdmin = cookieFrom(signedIn);
+    const persisted = await (
+      await request('/api/uplinks', { headers: { Cookie: restartedAdmin } })
+    ).json();
+    assert.equal(persisted.uplinks[0].values.jobs, 2);
+    assert.equal(
+      (
+        await post(
+          '/api/uplinks',
+          { action: 'revoke', id: created.id },
+          { Cookie: restartedAdmin, Origin: origin },
+        )
+      ).status,
+      200,
+    );
+    assert.equal(
+      (await post('/api/uplinks/receive', { jobs: 4 }, tokenHeaders)).status,
+      401,
+    );
+  } finally {
+    await server.stop();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test('production server enforces session auth, viewer restrictions, revocation, origin checks and persistent accounts', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'directory-api-'));
   let server = await start(directory);
