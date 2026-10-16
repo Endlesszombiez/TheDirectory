@@ -8,6 +8,14 @@ Use **Add service** to set a local destination (such as `http://10.0.0.3:8096`),
 
 Automatic icons use bundled logos for popular services, then the selected destination's `/favicon.ico`, then a generic symbol if the image is unavailable. You can provide a custom image URL or choose a generic icon. Health checks use the local destination when present, otherwise the web destination. Existing single-URL cards continue working.
 
+## Modular boards
+
+Every board after Overview supports service cards, widgets, and intentional blank spaces in the same grid. Select **Edit**, then **Add widget or space** to open the widget library. Drag a module by its grip or use its arrow buttons to move it, and choose its column width. Blank spaces remain in the grid when editing ends. Layouts adapt to smaller screens, and searching preserves card positions.
+
+Available widgets: service health (checked services and response times), host metrics, clock, independent notes, maintenance checklists, a 25-minute focus timer, Docker containers, and uplink metrics. Docker and uplinks use the connections configured in Settings. Administrators save regular board layouts, notes, and checklist progress to the shared configuration; viewers can run timers and view widgets. Existing service boards migrate automatically without losing cards. Overview retains its grouped cards and global widget sidebar.
+
+Favorites also has an **Edit layout** button for every user. Its layout, notes, and checklist save per account in the current browser, using browser storage; they do not sync across devices. Favorite service cards remain tied to their original boards. Timers run locally for the current session and reset when their widget is unmounted.
+
 ## Run in Docker
 
 Follow these steps in order. Start by getting the app working locally, then follow the public-access steps below if you want to reach it through your domain. You do not need Node.js or npm installed on the Docker host.
@@ -180,19 +188,19 @@ Use a new destination folder for each backup. Store the backup privately: it inc
 
 ### Docker troubleshooting
 
-| Symptom                                                       | What to check                                                                                                                                                                                   |
-| ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `docker` is not recognized or `docker compose` is unavailable | Install Docker Desktop or Docker Engine with the Compose plugin, then open a new terminal.                                                                                                      |
-| Cannot connect to the Docker daemon                           | Start Docker Desktop or the Docker service. On Linux, check your account's Docker permissions.                                                                                                  |
-| `no configuration file provided`                              | Run the command from the repository folder containing `compose.yaml`.                                                                                                                           |
-| Port `4321` is already allocated                              | Stop the other service, or change the host mapping to `127.0.0.1:8080:4321` and set `APP_ORIGIN=http://localhost:8080`. Recreate the container and use the new URL.                             |
-| Browser cannot reach the page                                 | Check `docker compose ps` and logs. Use `localhost` on the Docker host, an SSH tunnel, or your configured reverse proxy; the default port is not bound to the server's public IP.               |
-| “Set up your administrator” appears                           | Check that `.env` exists and contains a valid username and a password of at least 12 characters. Recreate the service after correcting it.                                                      |
+| Symptom                                                       | What to check                                                                                                                                                                                                      |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `docker` is not recognized or `docker compose` is unavailable | Install Docker Desktop or Docker Engine with the Compose plugin, then open a new terminal.                                                                                                                         |
+| Cannot connect to the Docker daemon                           | Start Docker Desktop or the Docker service. On Linux, check your account's Docker permissions.                                                                                                                     |
+| `no configuration file provided`                              | Run the command from the repository folder containing `compose.yaml`.                                                                                                                                              |
+| Port `4321` is already allocated                              | Stop the other service, or change the host mapping to `127.0.0.1:8080:4321` and set `APP_ORIGIN=http://localhost:8080`. Recreate the container and use the new URL.                                                |
+| Browser cannot reach the page                                 | Check `docker compose ps` and logs. Use `localhost` on the Docker host, an SSH tunnel, or your configured reverse proxy; the default port is not bound to the server's public IP.                                  |
+| “Set up your administrator” appears                           | Check that `.env` exists and contains a valid username and a password of at least 12 characters. Recreate the service after correcting it.                                                                         |
 | “Invalid origin” on login or saving                           | Add the browser's exact scheme, hostname, and port to the comma-separated `APP_ORIGIN` list, with no trailing slash. `localhost` and `127.0.0.1` are different origins. Recreate the service after editing `.env`. |
-| HTTPS login fails or does not stay signed in                  | Use the HTTPS URL specified by `APP_ORIGIN`, ensure your proxy forwards the original Host header, and verify TLS is working. HTTPS sessions use Secure cookies.                                 |
-| Changing `.env` did not change the administrator password     | Existing accounts are stored in the volume. Follow [Account recovery](#account-recovery) instead.                                                                                               |
-| “Too many attempts” appears                                   | Wait 15 minutes before trying again; login attempts are throttled.                                                                                                                              |
-| The container exits or stays unhealthy                        | Read `docker compose logs --tail=100 directory`. Check build errors and data-volume permissions. The app runs as the unprivileged `node` user.                                                  |
+| HTTPS login fails or does not stay signed in                  | Use the HTTPS URL specified by `APP_ORIGIN`, ensure your proxy forwards the original Host header, and verify TLS is working. HTTPS sessions use Secure cookies.                                                    |
+| Changing `.env` did not change the administrator password     | Existing accounts are stored in the volume. Follow [Account recovery](#account-recovery) instead.                                                                                                                  |
+| “Too many attempts” appears                                   | Wait 15 minutes before trying again; login attempts are throttled.                                                                                                                                                 |
+| The container exits or stays unhealthy                        | Read `docker compose logs --tail=100 directory`. Check build errors and data-volume permissions. The app runs as the unprivileged `node` user.                                                                     |
 
 ## Public access and account permissions
 

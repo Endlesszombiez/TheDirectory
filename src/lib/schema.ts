@@ -77,11 +77,58 @@ export const serviceSchema = z.object({
   group: z.string().min(1).max(50),
   check: z.boolean(),
 });
+export const moduleSchema = z.discriminatedUnion('kind', [
+  z.object({
+    id: z.string().min(1).max(300),
+    kind: z.literal('service'),
+    serviceId: z.string().min(1).max(300),
+    span: z.number().int().min(1).max(4),
+  }),
+  z.object({
+    id: z.string().min(1).max(300),
+    kind: z.literal('spacer'),
+    span: z.number().int().min(1).max(4),
+  }),
+  z.object({
+    id: z.string().min(1).max(300),
+    kind: z.literal('widget'),
+    widget: z.enum([
+      'clock',
+      'system',
+      'docker',
+      'uplinks',
+      'health',
+      'notes',
+      'checklist',
+      'timer',
+    ]),
+    span: z.number().int().min(1).max(4),
+    text: z.string().max(10000).optional(),
+  }),
+]);
+export type BoardModule = z.infer<typeof moduleSchema>;
 export const boardSchema = z.object({
   id: z.string().min(1).max(100),
   name: z.string().min(1).max(40),
   services: z.array(serviceSchema).max(100),
   notes: z.string().max(10000),
+  layout: z
+    .array(moduleSchema)
+    .max(200)
+    .optional()
+    .superRefine((items, ctx) => {
+      if (!items) return;
+      if (new Set(items.map((item) => item.id)).size !== items.length)
+        ctx.addIssue({ code: 'custom', message: 'Module IDs must be unique' });
+      const services = items
+        .filter((item) => item.kind === 'service')
+        .map((item) => item.serviceId);
+      if (new Set(services).size !== services.length)
+        ctx.addIssue({
+          code: 'custom',
+          message: 'A service can only appear once in a layout',
+        });
+    }),
 });
 export const configSchema = z
   .object({

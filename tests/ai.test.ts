@@ -45,6 +45,16 @@ test('AI proposals preserve service URLs, checks, notes, backgrounds, revisions 
   config.customCss = '.example { color: red; }';
   config.backgroundUrl = 'https://example.test/background.jpg';
   config.boards[0].notes = 'private board notes';
+  config.boards[0].layout = [
+    {
+      id: 'notes',
+      kind: 'widget',
+      widget: 'notes',
+      span: 2,
+      text: 'Preserve module notes',
+    },
+    { id: 'space', kind: 'spacer', span: 1 },
+  ];
   config.boards[0].services[0].check = true;
   const plan = planFor(config);
   plan.appearance.accent = 'purple';
@@ -54,6 +64,7 @@ test('AI proposals preserve service URLs, checks, notes, backgrounds, revisions 
   assert.equal(proposal.customCss, config.customCss);
   assert.equal(proposal.backgroundUrl, config.backgroundUrl);
   assert.equal(proposal.boards[0].notes, config.boards[0].notes);
+  assert.deepEqual(proposal.boards[0].layout, config.boards[0].layout);
   assert.deepEqual(
     proposal.boards.flatMap((b) =>
       b.services.map((s) => [s.id, s.url, s.check]),
@@ -74,6 +85,32 @@ test('AI proposals preserve service URLs, checks, notes, backgrounds, revisions 
     url: 'http://attacker.test',
   });
   assert.throws(() => applyAIPlan(config, injected), /format/);
+});
+
+test('AI organization retains an omitted board containing widgets even without board notes', () => {
+  const config = structuredClone(defaultConfig);
+  config.boards.push({
+    id: 'maintenance',
+    name: 'Maintenance',
+    notes: '',
+    services: [],
+    layout: [
+      {
+        id: 'tasks',
+        kind: 'widget',
+        widget: 'checklist',
+        span: 1,
+        text: '[x] Backup',
+      },
+    ],
+  });
+  const plan = planFor(config);
+  plan.boards = plan.boards.filter((board) => board.id !== 'maintenance');
+  const proposal = applyAIPlan(config, plan);
+  assert.deepEqual(
+    proposal.boards.find((board) => board.id === 'maintenance'),
+    config.boards.at(-1),
+  );
 });
 
 function stream(events: unknown[], finish = true) {

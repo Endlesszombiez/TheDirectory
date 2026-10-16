@@ -34,12 +34,18 @@ import {
   Star,
   ChevronDown,
 } from 'lucide-react';
-import { type Config, type Service } from '../lib/schema';
+import {
+  boardSchema,
+  type BoardModule,
+  type Config,
+  type Service,
+} from '../lib/schema';
 import type { PublicUser } from '../lib/auth';
 import DashboardSetup from './DashboardSetup';
 import AppSidebar from './AppSidebar';
 import ServiceIcon from './ServiceIcon';
 import ClockWidget from './ClockWidget';
+import ModularBoard from './ModularBoard';
 import { RenderDeployment, UplinksWidget } from './CloudWidgets';
 import type { RenderDeploymentStatus } from '../lib/render';
 import type { IntegrationStatus } from '../lib/integrations';
@@ -65,7 +71,7 @@ const icons = {
   music: Music,
   globe: Globe,
 };
-type Status = {
+export type Status = {
   render: {
     configured: boolean;
     services: Record<string, RenderDeploymentStatus>;
@@ -131,6 +137,9 @@ export default function Dashboard({
   const { favorites, toggleFavorite } = useFavorites(user.id);
   const [categoriesOpen, setCategoriesOpen] = useState(false);
   const isFavorites = boardId === FAVORITES_BOARD;
+  const [favoriteLayout, setFavoriteLayout] = useState<
+    BoardModule[] | undefined
+  >();
   const [query, setQuery] = useState('');
   const [localAccess, setLocalAccess] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -169,6 +178,18 @@ export default function Dashboard({
   const up = checked.filter(
     (s) => status?.services[`${sourceBoard(s).id}:${s.id}`]?.state === 'up',
   ).length;
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(`directory:layout:${user.id}:favorites`);
+      if (raw) {
+        const parsed = boardSchema.shape.layout.safeParse(JSON.parse(raw));
+        if (parsed.success) setFavoriteLayout(parsed.data);
+      }
+    } catch {
+      /* Storage can be disabled by the browser. */
+    }
+  }, [user.id]);
 
   async function refresh() {
     if (refreshing.current) return;
@@ -345,6 +366,346 @@ export default function Dashboard({
     void persist(updateBoard(list));
   }
 
+  const modular = isFavorites || board.id !== config.boards[0].id;
+  function renderService(s: Service) {
+    const Icon = icons[s.icon];
+    const destinations = serviceDestinations(s);
+    const health = status?.services[`${sourceBoard(s).id}:${s.id}`];
+    return (
+      <article
+        className={`service-card ${dragId === s.id ? 'dragging' : ''}`}
+        key={serviceKey(s)}
+        draggable={editing && !isFavorites && !modular && !saving}
+        onDragStart={(e) => {
+          setDragId(s.id);
+          e.dataTransfer.setData('text/plain', s.id);
+          e.dataTransfer.effectAllowed = 'move';
+        }}
+        onDragEnd={() => setDragId(null)}
+        onDragOver={(e) => {
+          if (editing && dragId) e.preventDefault();
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          if (!dragId || dragId === s.id || saving) return;
+          const list = [...board.services];
+          const from = list.findIndex((item) => item.id === dragId);
+          const to = list.findIndex((item) => item.id === s.id);
+          if (from < 0 || to < 0) return;
+          const [item] = list.splice(from, 1);
+          list.splice(to, 0, {
+            ...item,
+            group: s.group,
+          });
+          setDragId(null);
+          void persist(updateBoard(list));
+        }}
+      >
+        <button
+          type="button"
+          className={`icon-button favorite-toggle ${favorites.includes(serviceKey(s)) ? 'is-favorite' : ''}`}
+          aria-label={`${favorites.includes(serviceKey(s)) ? 'Unfavorite' : 'Favorite'} ${s.name}`}
+          aria-pressed={favorites.includes(serviceKey(s))}
+          onClick={() => toggleFavorite(serviceKey(s))}
+        >
+          <Star
+            size={17}
+            fill={favorites.includes(serviceKey(s)) ? 'currentColor' : 'none'}
+          />
+        </button>
+        <a
+          className="service-link"
+          draggable={false}
+          href={serviceDestination(s, localAccess)}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <div className="card-top">
+            <ServiceIcon
+              service={s}
+              local={localAccess}
+              fallback={<Icon size={24} />}
+            />
+            <ArrowUpRight className="external-arrow" size={16} />
+          </div>
+          <h4>{s.name}</h4>
+          {s.description && <p>{s.description}</p>}
+        </a>
+        <div className="card-footer">
+          <div className="service-destinations">
+            {destinations.local && (
+              <a
+                href={destinations.local}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={destinations.local}
+                aria-label={`Open ${s.name} locally`}
+              >
+                <Server size={13} />
+                <span>{new URL(destinations.local).host}</span>
+              </a>
+            )}
+            {destinations.web && (
+              <a
+                href={destinations.web}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={destinations.web}
+                aria-label={`Open ${s.name} on the web`}
+              >
+                <Cloud size={13} />
+                <span>{new URL(destinations.web).host}</span>
+              </a>
+            )}
+          </div>
+          {s.check && (
+            <span
+              className={`service-status ${health?.state || 'pending'}`}
+              title={
+                health?.latency !== undefined
+                  ? `${health.latency} ms`
+                  : undefined
+              }
+            >
+              <span className="dot" />
+              {!health
+                ? 'Checking'
+                : health.state === 'up'
+                  ? 'Online'
+                  : health.state === 'down'
+                    ? 'Offline'
+                    : 'Unchecked'}
+            </span>
+          )}
+        </div>
+        {s.renderServiceId && (
+          <RenderDeployment
+            id={s.renderServiceId}
+            dashboardUrl={s.renderDashboardUrl}
+            connected={!!status?.render.configured}
+            status={status?.render.services[s.renderServiceId]}
+          />
+        )}
+        {editing && !isFavorites && (
+          <div className="card-edit">
+            <button
+              aria-label={`Edit ${s.name}`}
+              title={`Edit ${s.name}`}
+              disabled={saving}
+              onClick={() => {
+                setError('');
+                setService({
+                  ...s,
+                  localUrl: destinations.local,
+                  webUrl: destinations.web,
+                });
+              }}
+            >
+              <Pencil size={14} />
+            </button>
+            {!modular && (
+              <>
+                <button
+                  aria-label={`Move ${s.name} up`}
+                  title={`Move ${s.name} up`}
+                  disabled={saving || board.services[0].id === s.id}
+                  onClick={() => move(s.id, -1)}
+                >
+                  <ArrowUp size={14} />
+                </button>
+                <button
+                  aria-label={`Move ${s.name} down`}
+                  title={`Move ${s.name} down`}
+                  disabled={saving || board.services.at(-1)?.id === s.id}
+                  onClick={() => move(s.id, 1)}
+                >
+                  <ArrowDown size={14} />
+                </button>
+              </>
+            )}
+            <button
+              aria-label={`Delete ${s.name}`}
+              title={`Remove ${s.name}`}
+              disabled={saving}
+              onClick={() => {
+                if (window.confirm(`Remove ${s.name} from this board?`))
+                  void persist(
+                    updateBoard(
+                      board.services.filter((item) => item.id !== s.id),
+                    ),
+                  );
+              }}
+            >
+              <Trash2 size={14} />
+              Remove
+            </button>
+          </div>
+        )}
+      </article>
+    );
+  }
+
+  function renderWidget(widget: Config['widgets'][number]) {
+    return widget === 'uplinks' ? (
+      <UplinksWidget
+        key={widget}
+        uplinks={status?.uplinks || []}
+        error={
+          statusError
+            ? 'Dashboard updates unavailable. Values may be stale.'
+            : status?.uplinksError
+        }
+        loading={!status && !statusError}
+      />
+    ) : widget === 'clock' ? (
+      <ClockWidget key={widget} />
+    ) : widget === 'system' ? (
+      <section className="widget" key={widget}>
+        <div className="widget-heading">
+          <h3>
+            <Activity size={16} />
+            Host
+          </h3>
+          <span className="live-label">LIVE</span>
+        </div>
+        <div className="system-name">
+          <span className="system-icon">
+            <Server size={18} />
+          </span>
+          <div>
+            <strong>{status?.system.hostname || 'Connecting…'}</strong>
+            <small>Dashboard host · {status?.system.platform || '—'}</small>
+          </div>
+        </div>
+        <div className="metric-row">
+          <span>Memory</span>
+          <strong>
+            {status ? bytes(status.system.memoryUsed) : '—'}{' '}
+            <small>/ {status ? bytes(status.system.memoryTotal) : '—'}</small>
+          </strong>
+        </div>
+        <div className="progress-track">
+          <div
+            style={{
+              width: `${status ? (status.system.memoryUsed / status.system.memoryTotal) * 100 : 0}%`,
+            }}
+          />
+        </div>
+        <div className="metric-row">
+          <span>CPU cores</span>
+          <strong>{status?.system.cpus ?? '—'}</strong>
+        </div>
+        <div className="metric-row">
+          <span>Host uptime</span>
+          <strong>
+            {status
+              ? `${Math.floor(status.system.uptime / 86400)}d ${Math.floor((status.system.uptime % 86400) / 3600)}h`
+              : '—'}
+          </strong>
+        </div>
+        <p className="widget-caption">
+          OS metrics; container limits may differ.
+        </p>
+      </section>
+    ) : widget === 'docker' ? (
+      <section className="widget" key={widget}>
+        <div className="widget-heading">
+          <h3>
+            <Container size={17} />
+            Docker
+          </h3>
+          <span className="count">
+            {status?.docker.containers?.length ?? '—'}
+          </span>
+        </div>
+        {status?.docker.containers ? (
+          <>
+            <div className="docker-summary">
+              <span className="dot" />
+              {
+                status.docker.containers.filter((c) => c.state === 'running')
+                  .length
+              }{' '}
+              containers running
+            </div>
+            <div className="container-list">
+              {status.docker.containers.length === 0 && (
+                <p className="widget-caption">No containers found.</p>
+              )}
+              {status.docker.containers.map((c) => (
+                <div
+                  key={c.id}
+                  className="container-row"
+                  title={`${c.image} · ${c.status}`}
+                >
+                  <Container size={14} />
+                  <span>{c.name}</span>
+                  <span
+                    className={`dot ${c.state === 'running' ? '' : 'muted-dot'}`}
+                  />
+                </div>
+              ))}
+            </div>
+          </>
+        ) : (
+          <div className="integration-empty">
+            <span className="integration-icon">
+              <Container size={24} />
+            </span>
+            <strong>
+              {status?.docker.error
+                ? 'Connection unavailable'
+                : 'Docker not connected'}
+            </strong>
+            <p>{status?.docker.error || 'Connect Docker in Settings.'}</p>
+            {canEdit && (
+              <a className="text-button" href="/ai">
+                Connections <ArrowUpRight size={13} />
+              </a>
+            )}
+          </div>
+        )}
+      </section>
+    ) : (
+      <section className="widget notes-widget" key={widget}>
+        <div className="widget-heading">
+          <h3>
+            <StickyNote size={16} />
+            Notes
+          </h3>
+          <Pencil size={14} />
+        </div>
+        <textarea
+          aria-label="Board notes"
+          readOnly={!canEdit || isFavorites}
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder="Add a note…"
+          maxLength={10000}
+        />
+        <div className="notes-footer">
+          <span>Board notes</span>
+          <button
+            className="text-button"
+            disabled={
+              !canEdit || isFavorites || notes === board.notes || saving
+            }
+            onClick={() =>
+              void persist({
+                ...config,
+                boards: config.boards.map((b) =>
+                  b.id === board.id ? { ...b, notes } : b,
+                ),
+              })
+            }
+          >
+            {saving ? 'Saving…' : notes === board.notes ? 'Saved' : 'Save note'}
+            <Check size={12} />
+          </button>
+        </div>
+      </section>
+    );
+  }
   return (
     <div
       className={`app-shell ${config.compact ? 'compact' : ''}`}
@@ -469,6 +830,14 @@ export default function Dashboard({
                         Add service
                       </button>
                     </>
+                  ) : isFavorites ? (
+                    <button
+                      className={`button ${editing ? 'selected' : ''}`}
+                      onClick={() => setEditing(!editing)}
+                    >
+                      <Settings2 size={16} />
+                      {editing ? 'Done' : 'Edit layout'}
+                    </button>
                   ) : (
                     <span className="viewer-label">Viewer access</span>
                   )}
@@ -486,7 +855,9 @@ export default function Dashboard({
                   </button>
                 </div>
               )}
-              <div className="dashboard-layout">
+              <div
+                className={`dashboard-layout ${modular ? 'modular-layout' : ''}`}
+              >
                 <section className="services-section" aria-label="Services">
                   <div className="section-toolbar">
                     <div className="section-title">
@@ -521,7 +892,11 @@ export default function Dashboard({
                   </div>
                   {canEdit && editing && !isFavorites && (
                     <div className="edit-toolbar">
-                      <p>Edit, reorder, or remove your service cards.</p>
+                      <p>
+                        {modular
+                          ? 'Edit service details below; use module controls to arrange the board.'
+                          : 'Edit, reorder, or remove your service cards.'}
+                      </p>
                       <button
                         className="button"
                         disabled={saving || !board.services.length}
@@ -540,7 +915,7 @@ export default function Dashboard({
                       </button>
                     </div>
                   )}
-                  {!services.length && (
+                  {!services.length && !modular && (
                     <div className="empty-state">
                       <Search size={28} />
                       <h3>
@@ -572,416 +947,103 @@ export default function Dashboard({
                       )}
                     </div>
                   )}
-                  {groups.map((group) => (
-                    <div className="service-group" key={group}>
-                      <div className="group-heading">
-                        <h3>{group}</h3>
-                        <div />
-                      </div>
-                      <div
-                        className="service-grid"
-                        style={
-                          { '--columns': config.columns } as React.CSSProperties
+                  {modular ? (
+                    <ModularBoard
+                      key={board.id}
+                      board={
+                        isFavorites
+                          ? {
+                              ...board,
+                              layout: favoriteLayout,
+                              services: board.services.map((s) => ({
+                                ...s,
+                                id: serviceKey(s),
+                              })),
+                            }
+                          : board
+                      }
+                      columns={config.columns}
+                      services={
+                        isFavorites
+                          ? services.map((s) => ({ ...s, id: serviceKey(s) }))
+                          : services
+                      }
+                      editing={editing && (canEdit || isFavorites)}
+                      canEdit={canEdit || isFavorites}
+                      saving={saving}
+                      status={status}
+                      statusError={statusError}
+                      renderService={(s) =>
+                        renderService(
+                          isFavorites
+                            ? board.services.find(
+                                (original) => serviceKey(original) === s.id,
+                              )!
+                            : s,
+                        )
+                      }
+                      renderWidget={renderWidget}
+                      healthKey={(s) => {
+                        const original = isFavorites
+                          ? board.services.find(
+                              (service) => serviceKey(service) === s.id,
+                            )!
+                          : s;
+                        return `${sourceBoard(original).id}:${original.id}`;
+                      }}
+                      onSave={async (layout) => {
+                        if (!isFavorites)
+                          return persist({
+                            ...config,
+                            boards: config.boards.map((b) =>
+                              b.id === board.id ? { ...b, layout } : b,
+                            ),
+                          });
+                        try {
+                          localStorage.setItem(
+                            `directory:layout:${user.id}:favorites`,
+                            JSON.stringify(layout),
+                          );
+                          setFavoriteLayout(layout);
+                          setMessage('Favorites layout saved in this browser');
+                          return true;
+                        } catch {
+                          setError(
+                            'Unable to save favorites layout. Allow browser storage and try again.',
+                          );
+                          return false;
                         }
-                      >
-                        {services
-                          .filter((s) => s.group === group)
-                          .map((s) => {
-                            const Icon = icons[s.icon];
-                            const destinations = serviceDestinations(s);
-                            const health =
-                              status?.services[`${sourceBoard(s).id}:${s.id}`];
-                            return (
-                              <article
-                                className={`service-card ${dragId === s.id ? 'dragging' : ''}`}
-                                key={serviceKey(s)}
-                                draggable={editing && !isFavorites && !saving}
-                                onDragStart={(e) => {
-                                  setDragId(s.id);
-                                  e.dataTransfer.setData('text/plain', s.id);
-                                  e.dataTransfer.effectAllowed = 'move';
-                                }}
-                                onDragEnd={() => setDragId(null)}
-                                onDragOver={(e) => {
-                                  if (editing && dragId) e.preventDefault();
-                                }}
-                                onDrop={(e) => {
-                                  e.preventDefault();
-                                  if (!dragId || dragId === s.id || saving)
-                                    return;
-                                  const list = [...board.services];
-                                  const from = list.findIndex(
-                                    (item) => item.id === dragId,
-                                  );
-                                  const to = list.findIndex(
-                                    (item) => item.id === s.id,
-                                  );
-                                  if (from < 0 || to < 0) return;
-                                  const [item] = list.splice(from, 1);
-                                  list.splice(to, 0, {
-                                    ...item,
-                                    group: s.group,
-                                  });
-                                  setDragId(null);
-                                  void persist(updateBoard(list));
-                                }}
-                              >
-                                <button
-                                  type="button"
-                                  className={`icon-button favorite-toggle ${favorites.includes(serviceKey(s)) ? 'is-favorite' : ''}`}
-                                  aria-label={`${favorites.includes(serviceKey(s)) ? 'Unfavorite' : 'Favorite'} ${s.name}`}
-                                  aria-pressed={favorites.includes(
-                                    serviceKey(s),
-                                  )}
-                                  onClick={() => toggleFavorite(serviceKey(s))}
-                                >
-                                  <Star
-                                    size={17}
-                                    fill={
-                                      favorites.includes(serviceKey(s))
-                                        ? 'currentColor'
-                                        : 'none'
-                                    }
-                                  />
-                                </button>
-                                <a
-                                  className="service-link"
-                                  draggable={false}
-                                  href={serviceDestination(s, localAccess)}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                >
-                                  <div className="card-top">
-                                    <ServiceIcon
-                                      service={s}
-                                      local={localAccess}
-                                      fallback={<Icon size={24} />}
-                                    />
-                                    <ArrowUpRight
-                                      className="external-arrow"
-                                      size={16}
-                                    />
-                                  </div>
-                                  <h4>{s.name}</h4>
-                                  {s.description && <p>{s.description}</p>}
-                                </a>
-                                <div className="card-footer">
-                                  <div className="service-destinations">
-                                    {destinations.local && (
-                                      <a
-                                        href={destinations.local}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        title={destinations.local}
-                                        aria-label={`Open ${s.name} locally`}
-                                      >
-                                        <Server size={13} />
-                                        <span>
-                                          {new URL(destinations.local).host}
-                                        </span>
-                                      </a>
-                                    )}
-                                    {destinations.web && (
-                                      <a
-                                        href={destinations.web}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        title={destinations.web}
-                                        aria-label={`Open ${s.name} on the web`}
-                                      >
-                                        <Cloud size={13} />
-                                        <span>
-                                          {new URL(destinations.web).host}
-                                        </span>
-                                      </a>
-                                    )}
-                                  </div>
-                                  {s.check && (
-                                    <span
-                                      className={`service-status ${health?.state || 'pending'}`}
-                                      title={
-                                        health?.latency !== undefined
-                                          ? `${health.latency} ms`
-                                          : undefined
-                                      }
-                                    >
-                                      <span className="dot" />
-                                      {!health
-                                        ? 'Checking'
-                                        : health.state === 'up'
-                                          ? 'Online'
-                                          : health.state === 'down'
-                                            ? 'Offline'
-                                            : 'Unchecked'}
-                                    </span>
-                                  )}
-                                </div>
-                                {s.renderServiceId && (
-                                  <RenderDeployment
-                                    id={s.renderServiceId}
-                                    dashboardUrl={s.renderDashboardUrl}
-                                    connected={!!status?.render.configured}
-                                    status={
-                                      status?.render.services[s.renderServiceId]
-                                    }
-                                  />
-                                )}
-                                {editing && !isFavorites && (
-                                  <div className="card-edit">
-                                    <button
-                                      aria-label={`Edit ${s.name}`}
-                                      title={`Edit ${s.name}`}
-                                      disabled={saving}
-                                      onClick={() => {
-                                        setError('');
-                                        setService({
-                                          ...s,
-                                          localUrl: destinations.local,
-                                          webUrl: destinations.web,
-                                        });
-                                      }}
-                                    >
-                                      <Pencil size={14} />
-                                    </button>
-                                    <button
-                                      aria-label={`Move ${s.name} up`}
-                                      title={`Move ${s.name} up`}
-                                      disabled={
-                                        saving || board.services[0].id === s.id
-                                      }
-                                      onClick={() => move(s.id, -1)}
-                                    >
-                                      <ArrowUp size={14} />
-                                    </button>
-                                    <button
-                                      aria-label={`Move ${s.name} down`}
-                                      title={`Move ${s.name} down`}
-                                      disabled={
-                                        saving ||
-                                        board.services.at(-1)?.id === s.id
-                                      }
-                                      onClick={() => move(s.id, 1)}
-                                    >
-                                      <ArrowDown size={14} />
-                                    </button>
-                                    <button
-                                      aria-label={`Delete ${s.name}`}
-                                      title={`Remove ${s.name}`}
-                                      disabled={saving}
-                                      onClick={() => {
-                                        if (
-                                          window.confirm(
-                                            `Remove ${s.name} from this board?`,
-                                          )
-                                        )
-                                          void persist(
-                                            updateBoard(
-                                              board.services.filter(
-                                                (item) => item.id !== s.id,
-                                              ),
-                                            ),
-                                          );
-                                      }}
-                                    >
-                                      <Trash2 size={14} />
-                                      Remove
-                                    </button>
-                                  </div>
-                                )}
-                              </article>
-                            );
-                          })}
+                      }}
+                    />
+                  ) : (
+                    groups.map((group) => (
+                      <div className="service-group" key={group}>
+                        <div className="group-heading">
+                          <h3>{group}</h3>
+                          <div />
+                        </div>
+                        <div
+                          className="service-grid"
+                          style={
+                            {
+                              '--columns': config.columns,
+                            } as React.CSSProperties
+                          }
+                        >
+                          {services
+                            .filter((s) => s.group === group)
+                            .map((s) => {
+                              return renderService(s);
+                            })}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ))
+                  )}
                 </section>
-                {!!config.widgets.length && (
+                {!modular && !!config.widgets.length && (
                   <aside className="widgets" aria-label="Dashboard widgets">
                     <div className="widget-section-label">Host & notes</div>
-                    {config.widgets.map((widget) =>
-                      widget === 'uplinks' ? (
-                        <UplinksWidget
-                          key={widget}
-                          uplinks={status?.uplinks || []}
-                          error={
-                            statusError
-                              ? 'Dashboard updates unavailable. Values may be stale.'
-                              : status?.uplinksError
-                          }
-                          loading={!status && !statusError}
-                        />
-                      ) : widget === 'clock' ? (
-                        <ClockWidget key={widget} />
-                      ) : widget === 'system' ? (
-                        <section className="widget" key={widget}>
-                          <div className="widget-heading">
-                            <h3>
-                              <Activity size={16} />
-                              Host
-                            </h3>
-                            <span className="live-label">LIVE</span>
-                          </div>
-                          <div className="system-name">
-                            <span className="system-icon">
-                              <Server size={18} />
-                            </span>
-                            <div>
-                              <strong>
-                                {status?.system.hostname || 'Connecting…'}
-                              </strong>
-                              <small>
-                                Dashboard host ·{' '}
-                                {status?.system.platform || '—'}
-                              </small>
-                            </div>
-                          </div>
-                          <div className="metric-row">
-                            <span>Memory</span>
-                            <strong>
-                              {status ? bytes(status.system.memoryUsed) : '—'}{' '}
-                              <small>
-                                /{' '}
-                                {status
-                                  ? bytes(status.system.memoryTotal)
-                                  : '—'}
-                              </small>
-                            </strong>
-                          </div>
-                          <div className="progress-track">
-                            <div
-                              style={{
-                                width: `${status ? (status.system.memoryUsed / status.system.memoryTotal) * 100 : 0}%`,
-                              }}
-                            />
-                          </div>
-                          <div className="metric-row">
-                            <span>CPU cores</span>
-                            <strong>{status?.system.cpus ?? '—'}</strong>
-                          </div>
-                          <div className="metric-row">
-                            <span>Host uptime</span>
-                            <strong>
-                              {status
-                                ? `${Math.floor(status.system.uptime / 86400)}d ${Math.floor((status.system.uptime % 86400) / 3600)}h`
-                                : '—'}
-                            </strong>
-                          </div>
-                          <p className="widget-caption">
-                            OS metrics; container limits may differ.
-                          </p>
-                        </section>
-                      ) : widget === 'docker' ? (
-                        <section className="widget" key={widget}>
-                          <div className="widget-heading">
-                            <h3>
-                              <Container size={17} />
-                              Docker
-                            </h3>
-                            <span className="count">
-                              {status?.docker.containers?.length ?? '—'}
-                            </span>
-                          </div>
-                          {status?.docker.containers ? (
-                            <>
-                              <div className="docker-summary">
-                                <span className="dot" />
-                                {
-                                  status.docker.containers.filter(
-                                    (c) => c.state === 'running',
-                                  ).length
-                                }{' '}
-                                containers running
-                              </div>
-                              <div className="container-list">
-                                {status.docker.containers.length === 0 && (
-                                  <p className="widget-caption">
-                                    No containers found.
-                                  </p>
-                                )}
-                                {status.docker.containers.map((c) => (
-                                  <div
-                                    key={c.id}
-                                    className="container-row"
-                                    title={`${c.image} · ${c.status}`}
-                                  >
-                                    <Container size={14} />
-                                    <span>{c.name}</span>
-                                    <span
-                                      className={`dot ${c.state === 'running' ? '' : 'muted-dot'}`}
-                                    />
-                                  </div>
-                                ))}
-                              </div>
-                            </>
-                          ) : (
-                            <div className="integration-empty">
-                              <span className="integration-icon">
-                                <Container size={24} />
-                              </span>
-                              <strong>
-                                {status?.docker.error
-                                  ? 'Connection unavailable'
-                                  : 'Docker not connected'}
-                              </strong>
-                              <p>
-                                {status?.docker.error ||
-                                  'Connect Docker in Settings.'}
-                              </p>
-                              {canEdit && (
-                                <a className="text-button" href="/ai">
-                                  Connections <ArrowUpRight size={13} />
-                                </a>
-                              )}
-                            </div>
-                          )}
-                        </section>
-                      ) : (
-                        <section className="widget notes-widget" key={widget}>
-                          <div className="widget-heading">
-                            <h3>
-                              <StickyNote size={16} />
-                              Notes
-                            </h3>
-                            <Pencil size={14} />
-                          </div>
-                          <textarea
-                            aria-label="Board notes"
-                            readOnly={!canEdit || isFavorites}
-                            value={notes}
-                            onChange={(e) => setNotes(e.target.value)}
-                            placeholder="Add a note…"
-                            maxLength={10000}
-                          />
-                          <div className="notes-footer">
-                            <span>Board notes</span>
-                            <button
-                              className="text-button"
-                              disabled={
-                                !canEdit ||
-                                isFavorites ||
-                                notes === board.notes ||
-                                saving
-                              }
-                              onClick={() =>
-                                void persist({
-                                  ...config,
-                                  boards: config.boards.map((b) =>
-                                    b.id === board.id ? { ...b, notes } : b,
-                                  ),
-                                })
-                              }
-                            >
-                              {saving
-                                ? 'Saving…'
-                                : notes === board.notes
-                                  ? 'Saved'
-                                  : 'Save note'}
-                              <Check size={12} />
-                            </button>
-                          </div>
-                        </section>
-                      ),
-                    )}
+                    {config.widgets.map(renderWidget)}
                   </aside>
                 )}
               </div>

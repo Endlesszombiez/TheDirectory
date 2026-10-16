@@ -76,6 +76,7 @@ export function applyAIPlan(config: Config, value: unknown): Config {
       id,
       name: b.name,
       notes: originalBoard?.notes || '',
+      ...(originalBoard?.layout ? { layout: originalBoard.layout } : {}),
       services: b.services.map((s) => {
         const original = originals.get(s.key);
         if (!original || seen.has(s.key))
@@ -98,7 +99,8 @@ export function applyAIPlan(config: Config, value: unknown): Config {
       502,
     );
   for (const b of config.boards)
-    if (b.notes && !boardIds.has(b.id)) boards.push({ ...b, services: [] });
+    if ((b.notes || b.layout?.length) && !boardIds.has(b.id))
+      boards.push({ ...b, services: [] });
   const result = configSchema.safeParse({
     ...config,
     ...plan.appearance,
