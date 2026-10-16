@@ -911,3 +911,63 @@ test('unconfigured first run stays locked and HTTPS reverse proxy origin sets se
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test('multiple configured origins allow LAN and HTTPS logins with separate cookie security', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'directory-origins-'));
+  const server = await start(directory, {
+    APP_ORIGIN: 'http://10.0.0.3, https://thecolony.cloud',
+  });
+  try {
+    const post = (origin?: string) =>
+      fetch(`${server.origin}/api/auth/login`, {
+        method: 'POST',
+        redirect: 'manual',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          ...(origin ? { Origin: origin } : {}),
+        },
+        body: new URLSearchParams({
+          username: 'tester',
+          password: 'integration-password',
+        }),
+      });
+    const local = await post('http://10.0.0.3');
+    assert.equal(local.status, 303);
+    assert.doesNotMatch(local.headers.get('set-cookie')!, /Secure/i);
+    assert.equal(local.headers.get('strict-transport-security'), null);
+    const publicLogin = await post('https://thecolony.cloud');
+    assert.equal(publicLogin.status, 303);
+    assert.match(publicLogin.headers.get('set-cookie')!, /Secure/i);
+    assert.match(
+      publicLogin.headers.get('strict-transport-security')!,
+      /max-age/,
+    );
+    for (const origin of [
+      undefined,
+      'null',
+      'https://evil.example',
+      'http://thecolony.cloud',
+      'http://10.0.0.3:4321',
+    ])
+      assert.equal((await post(origin)).status, 403);
+    const cookie = cookieFrom(local);
+    const config = await (
+      await fetch(`${server.origin}/api/config`, {
+        headers: { Cookie: cookie },
+      })
+    ).json();
+    const save = await fetch(`${server.origin}/api/config`, {
+      method: 'PUT',
+      headers: {
+        Cookie: cookie,
+        Origin: 'http://10.0.0.3',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(config),
+    });
+    assert.equal(save.status, 200);
+  } finally {
+    await server.stop();
+    await rm(directory, { recursive: true, force: true });
+  }
+});

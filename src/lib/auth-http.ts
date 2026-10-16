@@ -1,3 +1,4 @@
+import { requestAppOrigin } from './app-origins';
 import { readRequestText, RequestBodyTooLargeError } from './request-body';
 import type { APIContext } from 'astro';
 import {
@@ -24,7 +25,7 @@ export async function formData(request: Request) {
 export function setSession(context: APIContext, token: string) {
   context.cookies.set(SESSION_COOKIE, token, {
     httpOnly: true,
-    secure: (process.env.APP_ORIGIN || context.url.origin).startsWith(
+    secure: requestAppOrigin(context.request, context.url).startsWith(
       'https://',
     ),
     sameSite: 'strict',

@@ -4,9 +4,11 @@ import {
   LayoutDashboard,
   Plus,
   Settings2,
-  Container,
+  Star,
   FolderUp,
 } from 'lucide-react';
+import { useFavorites, favoriteKey, FAVORITES_BOARD } from '../lib/favorites';
+import { serviceDestination, isLocalHostname } from '../lib/service-links';
 import type { Config } from '../lib/schema';
 import type { PublicUser } from '../lib/auth';
 import type { ContainerManager } from '../lib/container-managers';
@@ -14,13 +16,11 @@ import type { ContainerManager } from '../lib/container-managers';
 export default function AppSidebar({
   config: initialConfig,
   user,
-  managers = [],
   boardId,
   managerId,
   settings = false,
   files = false,
   onBoard,
-  onManager,
 }: {
   config: Config;
   user: PublicUser;
@@ -32,6 +32,9 @@ export default function AppSidebar({
   onBoard?: (id: string) => void;
   onManager?: (manager: ContainerManager) => void;
 }) {
+  const { favorites } = useFavorites(user.id);
+  const [localAccess, setLocalAccess] = useState(false);
+  useEffect(() => setLocalAccess(isLocalHostname(location.hostname)), []);
   const [config, setConfig] = useState(initialConfig);
   useEffect(() => setConfig(initialConfig), [initialConfig]);
   useEffect(() => {
@@ -53,11 +56,19 @@ export default function AppSidebar({
       </a>
       <div className="nav-label">BOARDS</div>
       <nav aria-label="Boards">
-        {config.boards.map((board) => {
+        {[
+          config.boards[0],
+          { id: FAVORITES_BOARD, name: 'Favorites' },
+          ...config.boards.slice(1),
+        ].map((board) => {
           const active = !settings && !managerId && boardId === board.id;
           const content = (
             <>
-              <LayoutDashboard size={18} />
+              {board.id === FAVORITES_BOARD ? (
+                <Star size={18} />
+              ) : (
+                <LayoutDashboard size={18} />
+              )}
               <span>{board.name}</span>
             </>
           );
@@ -87,38 +98,30 @@ export default function AppSidebar({
           </a>
         )}
       </nav>
-      {managers.some((manager) => manager.url) && (
-        <>
-          <div className="sidebar-separator" />
-          <div className="nav-label">CONTAINERS</div>
-          <nav aria-label="Container managers">
-            {managers
-              .filter((manager) => manager.url)
-              .map((manager) =>
-                onManager ? (
-                  <button
-                    key={manager.id}
-                    className={`nav-item ${managerId === manager.id ? 'active' : ''}`}
-                    aria-current={managerId === manager.id ? 'page' : undefined}
-                    onClick={() => onManager(manager)}
-                  >
-                    <Container size={18} />
-                    <span>{manager.name}</span>
-                  </button>
-                ) : (
-                  <a
-                    key={manager.id}
-                    className="nav-item"
-                    href={`/?manager=${manager.id}`}
-                  >
-                    <Container size={18} />
-                    <span>{manager.name}</span>
-                  </a>
-                ),
-              )}
-          </nav>
-        </>
-      )}
+      <div className="sidebar-separator" />
+      <div className="nav-label">FAVORITES</div>
+      <nav aria-label="Favorite services">
+        {config.boards.flatMap((board) =>
+          board.services
+            .filter((service) =>
+              favorites.includes(favoriteKey(board.id, service.id)),
+            )
+            .map((service) => (
+              <a
+                className="nav-item"
+                key={favoriteKey(board.id, service.id)}
+                href={serviceDestination(service, localAccess)}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <span>{service.name}</span>
+              </a>
+            )),
+        )}
+        {!favorites.length && (
+          <p className="favorites-hint">Star services to add shortcuts.</p>
+        )}
+      </nav>
       <div className="sidebar-bottom">
         <a
           className={`nav-item ${files ? 'active' : ''}`}

@@ -1,3 +1,4 @@
+import { appOrigins, requestAppOrigin } from './lib/app-origins';
 import { defineMiddleware } from 'astro:middleware';
 import { ensureBootstrap, sessionUser, SESSION_COOKIE } from './lib/auth';
 
@@ -16,20 +17,20 @@ export const onRequest = defineMiddleware(async (context, next) => {
     ) ||
     ['/api/health', '/login', '/api/auth/login'].includes(path);
   const mutation = !['GET', 'HEAD', 'OPTIONS'].includes(context.request.method);
-  const expectedOrigin = process.env.APP_ORIGIN || context.url.origin;
+  let origins: string[];
   try {
-    const parsed = new URL(expectedOrigin);
-    if (
-      !['http:', 'https:'].includes(parsed.protocol) ||
-      parsed.origin !== expectedOrigin
-    )
-      throw new Error('Invalid APP_ORIGIN');
+    origins = appOrigins(context.url);
   } catch {
     return new Response(
-      'APP_ORIGIN must be an HTTP(S) origin without a trailing slash or path.',
+      'APP_ORIGIN must be a comma-separated list of HTTP(S) origins without trailing slashes or paths.',
       { status: 503 },
     );
   }
+  const expectedOrigin = requestAppOrigin(
+    context.request,
+    context.url,
+    origins,
+  );
   const finish = (response: Response) => {
     response.headers.set('X-Content-Type-Options', 'nosniff');
     // Preserve Origin on same-origin form POSTs; no-referrer can produce Origin: null.
@@ -52,7 +53,10 @@ export const onRequest = defineMiddleware(async (context, next) => {
     !context.request.headers.has('origin')
   )
     return finish(await next());
-  if (mutation && context.request.headers.get('origin') !== expectedOrigin)
+  if (
+    mutation &&
+    !origins.includes(context.request.headers.get('origin') || '')
+  )
     return finish(Response.json({ error: 'Invalid origin' }, { status: 403 }));
   context.locals.user = null;
   if (path !== '/api/health') {

@@ -1,3 +1,4 @@
+import { useFavorites, favoriteKey, FAVORITES_BOARD } from '../lib/favorites';
 import { clientId } from '../lib/client-id';
 import { useEffect, useRef, useState, type SubmitEvent } from 'react';
 import {
@@ -30,6 +31,8 @@ import {
   StickyNote,
   Pencil,
   Sparkles,
+  Star,
+  ChevronDown,
 } from 'lucide-react';
 import { type Config, type Service } from '../lib/schema';
 import type { PublicUser } from '../lib/auth';
@@ -125,6 +128,9 @@ export default function Dashboard({
     useState<ContainerManager | null>(null);
   const [config, setConfig] = useState(initialConfig);
   const [boardId, setBoardId] = useState(initialConfig.boards[0].id);
+  const { favorites, toggleFavorite } = useFavorites(user.id);
+  const [categoriesOpen, setCategoriesOpen] = useState(false);
+  const isFavorites = boardId === FAVORITES_BOARD;
   const [query, setQuery] = useState('');
   const [localAccess, setLocalAccess] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -140,7 +146,19 @@ export default function Dashboard({
   const [notes, setNotes] = useState(initialConfig.boards[0].notes);
   const searchRef = useRef<HTMLInputElement>(null);
   const refreshing = useRef(false);
-  const board = config.boards.find((b) => b.id === boardId) || config.boards[0];
+  const sourceBoard = (s: Service) =>
+    config.boards.find((b) => b.services.includes(s))!;
+  const serviceKey = (s: Service) => favoriteKey(sourceBoard(s).id, s.id);
+  const board = isFavorites
+    ? {
+        id: FAVORITES_BOARD,
+        name: 'Favorites',
+        notes: config.boards[0].notes,
+        services: config.boards.flatMap((b) =>
+          b.services.filter((s) => favorites.includes(favoriteKey(b.id, s.id))),
+        ),
+      }
+    : config.boards.find((b) => b.id === boardId) || config.boards[0];
   const services = board.services.filter((s) =>
     `${s.name} ${s.description} ${s.group}`
       .toLowerCase()
@@ -149,7 +167,7 @@ export default function Dashboard({
   const groups = [...new Set(services.map((s) => s.group))];
   const checked = board.services.filter((s) => s.check);
   const up = checked.filter(
-    (s) => status?.services[`${board.id}:${s.id}`]?.state === 'up',
+    (s) => status?.services[`${sourceBoard(s).id}:${s.id}`]?.state === 'up',
   ).length;
 
   async function refresh() {
@@ -174,7 +192,10 @@ export default function Dashboard({
     setLocalAccess(isLocalHostname(window.location.hostname));
     const params = new URLSearchParams(window.location.search);
     const requestedBoard = params.get('board');
-    if (initialConfig.boards.some((b) => b.id === requestedBoard))
+    if (
+      requestedBoard === FAVORITES_BOARD ||
+      initialConfig.boards.some((b) => b.id === requestedBoard)
+    )
       setBoardId(requestedBoard!);
     const requestedManager = containerManagers.find(
       (m) => m.id === params.get('manager') && m.url,
@@ -359,6 +380,7 @@ export default function Dashboard({
           onBoard={(id) => {
             setSelectedManager(null);
             setBoardId(id);
+            setEditing(false);
             setQuery('');
             setMobile(false);
           }}
@@ -423,7 +445,7 @@ export default function Dashboard({
                   <h1>{board.name}</h1>
                 </div>
                 <div className="heading-actions">
-                  {canEdit ? (
+                  {canEdit && !isFavorites ? (
                     <>
                       <button className="button" onClick={() => setSetup(true)}>
                         <Sparkles size={16} />
@@ -497,7 +519,7 @@ export default function Dashboard({
                       <kbd>Ctrl K</kbd>
                     </div>
                   </div>
-                  {canEdit && editing && (
+                  {canEdit && editing && !isFavorites && (
                     <div className="edit-toolbar">
                       <p>Edit, reorder, or remove your service cards.</p>
                       <button
@@ -521,23 +543,33 @@ export default function Dashboard({
                   {!services.length && (
                     <div className="empty-state">
                       <Search size={28} />
-                      <h3>{query ? 'No services found' : 'A fresh start'}</h3>
+                      <h3>
+                        {query
+                          ? 'No services found'
+                          : isFavorites
+                            ? 'No favorites yet'
+                            : 'A fresh start'}
+                      </h3>
                       <p>
                         {query
                           ? 'Try a different name or category.'
-                          : 'Add your first service to make this board yours.'}
+                          : isFavorites
+                            ? 'Star services on any board to see them here.'
+                            : 'Add your first service to make this board yours.'}
                       </p>
-                      <button
-                        className="button"
-                        disabled={!query && !canEdit}
-                        onClick={() =>
-                          query
-                            ? setQuery('')
-                            : (setError(''), setService(blankService()))
-                        }
-                      >
-                        {query ? 'Clear search' : 'Add service'}
-                      </button>
+                      {(!isFavorites || query) && (
+                        <button
+                          className="button"
+                          disabled={!query && (!canEdit || isFavorites)}
+                          onClick={() =>
+                            query
+                              ? setQuery('')
+                              : (setError(''), setService(blankService()))
+                          }
+                        >
+                          {query ? 'Clear search' : 'Add service'}
+                        </button>
+                      )}
                     </div>
                   )}
                   {groups.map((group) => (
@@ -558,12 +590,12 @@ export default function Dashboard({
                             const Icon = icons[s.icon];
                             const destinations = serviceDestinations(s);
                             const health =
-                              status?.services[`${board.id}:${s.id}`];
+                              status?.services[`${sourceBoard(s).id}:${s.id}`];
                             return (
                               <article
                                 className={`service-card ${dragId === s.id ? 'dragging' : ''}`}
-                                key={s.id}
-                                draggable={editing && !saving}
+                                key={serviceKey(s)}
+                                draggable={editing && !isFavorites && !saving}
                                 onDragStart={(e) => {
                                   setDragId(s.id);
                                   e.dataTransfer.setData('text/plain', s.id);
@@ -594,6 +626,24 @@ export default function Dashboard({
                                   void persist(updateBoard(list));
                                 }}
                               >
+                                <button
+                                  type="button"
+                                  className={`icon-button favorite-toggle ${favorites.includes(serviceKey(s)) ? 'is-favorite' : ''}`}
+                                  aria-label={`${favorites.includes(serviceKey(s)) ? 'Unfavorite' : 'Favorite'} ${s.name}`}
+                                  aria-pressed={favorites.includes(
+                                    serviceKey(s),
+                                  )}
+                                  onClick={() => toggleFavorite(serviceKey(s))}
+                                >
+                                  <Star
+                                    size={17}
+                                    fill={
+                                      favorites.includes(serviceKey(s))
+                                        ? 'currentColor'
+                                        : 'none'
+                                    }
+                                  />
+                                </button>
                                 <a
                                   className="service-link"
                                   draggable={false}
@@ -676,7 +726,7 @@ export default function Dashboard({
                                     }
                                   />
                                 )}
-                                {editing && (
+                                {editing && !isFavorites && (
                                   <div className="card-edit">
                                     <button
                                       aria-label={`Edit ${s.name}`}
@@ -896,7 +946,7 @@ export default function Dashboard({
                           </div>
                           <textarea
                             aria-label="Board notes"
-                            readOnly={!canEdit}
+                            readOnly={!canEdit || isFavorites}
                             value={notes}
                             onChange={(e) => setNotes(e.target.value)}
                             placeholder="Add a note…"
@@ -907,7 +957,10 @@ export default function Dashboard({
                             <button
                               className="text-button"
                               disabled={
-                                !canEdit || notes === board.notes || saving
+                                !canEdit ||
+                                isFavorites ||
+                                notes === board.notes ||
+                                saving
                               }
                               onClick={() =>
                                 void persist({
@@ -1057,23 +1110,55 @@ export default function Dashboard({
                 Add either destination or both. Local access favors the server
                 link; public access favors the cloud link.
               </p>
-              <label>
-                Category
-                <input
-                  required
-                  list="groups"
-                  maxLength={50}
-                  value={service.group}
-                  onChange={(e) =>
-                    setService({ ...service, group: e.target.value })
-                  }
-                />
-                <datalist id="groups">
-                  {[...new Set(board.services.map((s) => s.group))].map((g) => (
-                    <option key={g} value={g} />
-                  ))}
-                </datalist>
-              </label>
+              <div className="category-field">
+                <label htmlFor="service-category">Category</label>
+                <div className="category-input">
+                  <input
+                    id="service-category"
+                    required
+                    maxLength={50}
+                    value={service.group}
+                    onChange={(e) => {
+                      setService({ ...service, group: e.target.value });
+                      setCategoriesOpen(false);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="icon-button"
+                    aria-label="Show all categories"
+                    aria-expanded={categoriesOpen}
+                    onClick={() => setCategoriesOpen(!categoriesOpen)}
+                  >
+                    <ChevronDown size={17} />
+                  </button>
+                </div>
+                {categoriesOpen && (
+                  <div
+                    className="category-options"
+                    aria-label="Existing categories"
+                  >
+                    {[
+                      ...new Set(
+                        config.boards.flatMap((b) =>
+                          b.services.map((s) => s.group),
+                        ),
+                      ),
+                    ].map((group) => (
+                      <button
+                        type="button"
+                        key={group}
+                        onClick={() => {
+                          setService({ ...service, group });
+                          setCategoriesOpen(false);
+                        }}
+                      >
+                        {group}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
               <div className="form-row">
                 <label>
                   Icon

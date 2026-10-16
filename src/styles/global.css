@@ -1574,3 +1574,90 @@ h1 {
   padding: 12px 0;
   font-size: 12px;
 }
+
+/* Favorites and category selection */
+.brand {
+  margin-bottom: 28px;
+}
+.favorites-hint {
+  color: var(--muted);
+  font-size: 12px;
+  padding: 0 12px;
+}
+.service-card {
+  position: relative;
+}
+.favorite-toggle {
+  position: absolute;
+  right: 38px;
+  top: 16px;
+  z-index: 1;
+}
+.favorite-toggle.is-favorite {
+  color: var(--accent);
+}
+.category-field {
+  position: relative;
+  margin-bottom: 17px;
+}
+.category-input {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.category-input input {
+  flex: 1;
+  min-width: 0;
+}
+.category-options {
+  display: grid;
+  gap: 4px;
+  padding: 6px;
+  margin-top: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  max-height: 180px;
+  overflow: auto;
+}
+.category-options button {
+  text-align: left;
+  padding: 8px 10px;
+  background: var(--field);
+  border: 0;
+  border-radius: 4px;
+  color: var(--text);
+  cursor: pointer;
+}
+.category-options button:hover {
+  color: var(--accent);
+}
+.connection-settings form {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.connection-settings label:not(.checkbox-label) {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.connection-settings label:not(.checkbox-label) input,
+.connection-settings label:not(.checkbox-label) select {
+  width: 100%;
+  min-width: 0;
+}
+.connection-settings form > .button {
+  justify-self: start;
+}
+.connection-settings .form-row {
+  align-items: end;
+  flex-wrap: wrap;
+}
+.connection-settings .form-row > label {
+  flex: 1 1 220px;
+}
+.connection-settings .uplink-secret {
+  display: grid;
+  gap: 16px;
+}
