@@ -1,3 +1,41 @@
+.files-tab-content:not([hidden]) {
+  display: grid;
+  gap: 24px;
+}
+.paste-composer {
+  display: grid;
+  gap: 16px;
+}
+.paste-composer .files-section-heading {
+  margin-bottom: 0;
+}
+.paste-composer h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.paste-composer textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 160px;
+  font-family: monospace;
+}
+.paste-entry {
+  min-width: 0;
+  padding: 20px 0;
+  border-top: 1px solid var(--border);
+}
+.paste-entry pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 360px;
+  overflow: auto;
+  padding: 16px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 13px;
+}
 .files-workspace {
   max-width: 1080px;
   margin: auto;

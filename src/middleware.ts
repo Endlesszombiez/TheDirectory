@@ -12,7 +12,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
   const api = path.startsWith('/api/');
   const publicRoute =
     path === '/files' ||
-    /^\/api\/files\/(status|unlock|lock|settings|list|upload|download|delete)$/.test(
+    /^\/api\/files\/(status|unlock|lock|settings|list|upload|download|delete|pastes)$/.test(
       path,
     ) ||
     ['/api/health', '/login', '/api/auth/login'].includes(path);

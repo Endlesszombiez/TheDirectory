@@ -4,6 +4,12 @@ import { z } from 'zod';
 import { requestJson } from '../../../lib/api-json';
 import { AIError } from '../../../lib/ai-provider';
 import {
+  createPaste,
+  listPastes,
+  deletePaste,
+  MAX_PASTE_BYTES,
+} from '../../../lib/pastes';
+import {
   FilesError,
   FILES_COOKIE,
   fileSettings,
@@ -61,6 +67,20 @@ const route: APIRoute = async (context) => {
     }
     if (!unlocked)
       throw new FilesError('Enter the file PIN or password to continue.', 401);
+    if (action === 'pastes') {
+      if (method === 'POST') {
+        const { text } = z
+          .object({ text: z.string() })
+          .parse(await requestJson(request, MAX_PASTE_BYTES * 6 + 1024));
+        return Response.json(await createPaste(text), { status: 201 });
+      }
+      if (method === 'GET')
+        return Response.json({ pastes: await listPastes() });
+      if (method === 'DELETE') {
+        await deletePaste(url.searchParams.get('id') || '');
+        return Response.json({ ok: true });
+      }
+    }
     if (action === 'list' && method === 'GET') {
       if (!settings.showFileList)
         throw new FilesError('File listing is disabled.', 403);

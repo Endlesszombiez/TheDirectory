@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import Pastebin from './Pastebin';
 import {
   Download,
   FolderUp,
@@ -41,6 +42,7 @@ const bytes = (size: number) =>
         : `${(size / 1073741824).toFixed(1)} GB`;
 
 export default function Files() {
+  const [tab, setTab] = useState<'files' | 'pastes'>('files');
   const [settings, setSettings] = useState<Settings | null>(null);
   const [entries, setEntries] = useState<Entry[]>([]);
   const [totals, setTotals] = useState({ totalBytes: 0, totalFiles: 0 });
@@ -319,266 +321,288 @@ export default function Files() {
         </section>
       ) : (
         <>
-          <section
-            className={`files-drop files-panel ${dragging ? 'dragging' : ''}`}
-            onDragOver={(e) => {
-              e.preventDefault();
-              if (!uploading) setDragging(true);
-            }}
-            onDragLeave={() => setDragging(false)}
-            onDrop={(e) => {
-              e.preventDefault();
-              setDragging(false);
-              if (!uploading) void dropped(e.dataTransfer);
-            }}
-          >
-            <div className="files-symbol">
-              <FolderUp size={32} />
-            </div>
-            <h2>Drop files or folders here</h2>
-            <p className="files-muted">
-              Up to {settings.maxFileMB.toLocaleString()} MB per file
-              {settings.allowedExtensions
-                ? ` · ${settings.allowedExtensions}`
-                : ' · All file types'}
-            </p>
-            <div className="files-actions">
-              <button
-                className="button primary"
-                disabled={uploading}
-                onClick={() => picker.current?.click()}
-              >
-                <Upload size={16} /> Choose files
-              </button>
-              <button
-                className="button"
-                disabled={uploading}
-                onClick={() => folder.current?.click()}
-              >
-                <FolderUp size={16} /> Choose folder
-              </button>
-            </div>
-            <input
-              ref={picker}
-              type="file"
-              hidden
-              multiple
-              accept={settings.allowedExtensions || undefined}
-              onChange={(e) => {
-                select(Array.from(e.target.files || []));
-                e.target.value = '';
+          <div className="files-actions" role="group" aria-label="Sharing area">
+            <button
+              className={`button ${tab === 'files' ? 'primary' : ''}`}
+              aria-pressed={tab === 'files'}
+              onClick={() => setTab('files')}
+            >
+              Files
+            </button>
+            <button
+              className={`button ${tab === 'pastes' ? 'primary' : ''}`}
+              aria-pressed={tab === 'pastes'}
+              onClick={() => setTab('pastes')}
+            >
+              Pastebin
+            </button>
+          </div>
+          <div className="files-tab-content" hidden={tab !== 'pastes'}>
+            <Pastebin request={request} />
+          </div>
+          <div className="files-tab-content" hidden={tab !== 'files'}>
+            <section
+              className={`files-drop files-panel ${dragging ? 'dragging' : ''}`}
+              onDragOver={(e) => {
+                e.preventDefault();
+                if (!uploading) setDragging(true);
               }}
-            />
-            <input
-              ref={folder}
-              type="file"
-              hidden
-              multiple
-              {...{ webkitdirectory: '' }}
-              onChange={(e) => {
-                select(Array.from(e.target.files || []));
-                e.target.value = '';
+              onDragLeave={() => setDragging(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragging(false);
+                if (!uploading) void dropped(e.dataTransfer);
               }}
-            />
-            <label className="files-destination">
-              Upload into folder (optional)
-              <input
-                placeholder="e.g. Photos / leave empty for root"
-                value={destination}
-                disabled={uploading}
-                onChange={(e) => setDestination(e.target.value)}
-              />
-            </label>
-          </section>
-          {items.length > 0 && (
-            <section className="files-panel">
-              <div className="files-section-heading">
-                <h2>
-                  Upload queue{' '}
-                  <small>
-                    {items.filter((i) => i.status === 'done').length}/
-                    {items.length}
-                  </small>
-                </h2>
-                <div className="files-actions">
-                  {uploading ? (
-                    <button
-                      className="button"
-                      onClick={() => {
-                        cancelled.current = true;
-                        active.current?.abort();
-                      }}
-                    >
-                      Cancel uploads
-                    </button>
-                  ) : (
-                    <>
-                      <button
-                        className="button primary"
-                        disabled={items.every((i) => i.status === 'done')}
-                        onClick={() => void upload(items)}
-                      >
-                        <Upload size={16} /> Upload / retry
-                      </button>
-                      <button
-                        className="icon-button"
-                        aria-label="Clear queue"
-                        onClick={() => setItems([])}
-                      >
-                        <X size={18} />
-                      </button>
-                    </>
-                  )}
-                </div>
+            >
+              <div className="files-symbol">
+                <FolderUp size={32} />
               </div>
-              {items.map((item, index) => (
-                <div className="files-queue-item" key={index}>
-                  <div>
-                    <strong>{item.path}</strong>
-                    <span className="files-muted">
-                      {bytes(item.file.size)} ·{' '}
-                      {item.status === 'uploading'
-                        ? `${item.progress}%`
-                        : item.status}
-                    </span>
-                  </div>
-                  <progress
-                    max={100}
-                    value={item.progress}
-                    aria-label={`Upload progress for ${item.path}`}
-                  />
-                  {item.error && (
-                    <p className="files-error" role="status">
-                      {item.error}
-                    </p>
-                  )}
-                </div>
-              ))}
-            </section>
-          )}
-          {settings.showFileList && (
-            <section className="files-panel">
-              <div className="files-section-heading">
-                <div>
-                  <h2>Shared files</h2>
-                  <p className="files-muted">
-                    {totals.totalFiles} files · {bytes(totals.totalBytes)} used
-                  </p>
-                </div>
+              <h2>Drop files or folders here</h2>
+              <p className="files-muted">
+                Up to {settings.maxFileMB.toLocaleString()} MB per file
+                {settings.allowedExtensions
+                  ? ` · ${settings.allowedExtensions}`
+                  : ' · All file types'}
+              </p>
+              <div className="files-actions">
+                <button
+                  className="button primary"
+                  disabled={uploading}
+                  onClick={() => picker.current?.click()}
+                >
+                  <Upload size={16} /> Choose files
+                </button>
                 <button
                   className="button"
-                  disabled={busy || uploading}
-                  onClick={() =>
-                    void act(async () => {
-                      await refresh();
-                    })
-                  }
+                  disabled={uploading}
+                  onClick={() => folder.current?.click()}
                 >
-                  <RefreshCw size={16} /> Refresh
+                  <FolderUp size={16} /> Choose folder
                 </button>
               </div>
               <input
-                className="files-search"
-                type="search"
-                placeholder="Find a file or folder…"
-                aria-label="Find files"
-                value={filter}
-                onChange={(e) => setFilter(e.target.value)}
+                ref={picker}
+                type="file"
+                hidden
+                multiple
+                accept={settings.allowedExtensions || undefined}
+                onChange={(e) => {
+                  select(Array.from(e.target.files || []));
+                  e.target.value = '';
+                }}
               />
-              {!entries.length && (
-                <p className="files-empty">
-                  Nothing here yet. Your first upload starts here.
-                </p>
-              )}
-              <div className="files-list">
-                {entries
-                  .filter((entry) =>
-                    entry.path.toLowerCase().includes(filter.toLowerCase()),
-                  )
-                  .map((entry) => (
-                    <div className="files-row" key={entry.path}>
-                      <div className="files-name">
-                        <span>{entry.directory ? '📁' : '📄'}</span>
-                        <div>
-                          <strong>{entry.path}</strong>
-                          <small>
-                            {entry.directory ? 'Folder' : bytes(entry.size)} ·{' '}
-                            {new Date(entry.modified).toLocaleString()}
-                          </small>
-                        </div>
-                      </div>
-                      <div className="files-actions">
-                        {!entry.directory && (
-                          <a
-                            className="icon-button"
-                            aria-label={`Download ${entry.path}`}
-                            href={`/api/files/download?path=${encodeURIComponent(entry.path)}`}
-                          >
-                            <Download size={18} />
-                          </a>
-                        )}
+              <input
+                ref={folder}
+                type="file"
+                hidden
+                multiple
+                {...{ webkitdirectory: '' }}
+                onChange={(e) => {
+                  select(Array.from(e.target.files || []));
+                  e.target.value = '';
+                }}
+              />
+              <label className="files-destination">
+                Upload into folder (optional)
+                <input
+                  placeholder="e.g. Photos / leave empty for root"
+                  value={destination}
+                  disabled={uploading}
+                  onChange={(e) => setDestination(e.target.value)}
+                />
+              </label>
+            </section>
+            {items.length > 0 && (
+              <section className="files-panel">
+                <div className="files-section-heading">
+                  <h2>
+                    Upload queue{' '}
+                    <small>
+                      {items.filter((i) => i.status === 'done').length}/
+                      {items.length}
+                    </small>
+                  </h2>
+                  <div className="files-actions">
+                    {uploading ? (
+                      <button
+                        className="button"
+                        onClick={() => {
+                          cancelled.current = true;
+                          active.current?.abort();
+                        }}
+                      >
+                        Cancel uploads
+                      </button>
+                    ) : (
+                      <>
+                        <button
+                          className="button primary"
+                          disabled={items.every((i) => i.status === 'done')}
+                          onClick={() => void upload(items)}
+                        >
+                          <Upload size={16} /> Upload / retry
+                        </button>
                         <button
                           className="icon-button"
-                          disabled={uploading || busy}
-                          aria-label={`Delete ${entry.path}`}
-                          onClick={() => setRemove(entry)}
+                          aria-label="Clear queue"
+                          onClick={() => setItems([])}
                         >
-                          <Trash2 size={17} />
+                          <X size={18} />
                         </button>
-                      </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+                {items.map((item, index) => (
+                  <div className="files-queue-item" key={index}>
+                    <div>
+                      <strong>{item.path}</strong>
+                      <span className="files-muted">
+                        {bytes(item.file.size)} ·{' '}
+                        {item.status === 'uploading'
+                          ? `${item.progress}%`
+                          : item.status}
+                      </span>
                     </div>
-                  ))}
-              </div>
-            </section>
-          )}
-          {remove && (
-            <div
-              className="files-confirm"
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="files-delete-title"
-              onKeyDown={(e) => {
-                if (e.key === 'Escape') setRemove(null);
-              }}
-            >
+                    <progress
+                      max={100}
+                      value={item.progress}
+                      aria-label={`Upload progress for ${item.path}`}
+                    />
+                    {item.error && (
+                      <p className="files-error" role="status">
+                        {item.error}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </section>
+            )}
+            {settings.showFileList && (
               <section className="files-panel">
-                <h2 id="files-delete-title">
-                  Delete {remove.directory ? 'folder' : 'file'}?
-                </h2>
-                <p>
-                  {remove.path}
-                  {remove.directory ? ' and everything inside it' : ''} will be
-                  permanently deleted.
-                </p>
-                <div className="files-actions">
+                <div className="files-section-heading">
+                  <div>
+                    <h2>Shared files</h2>
+                    <p className="files-muted">
+                      {totals.totalFiles} files · {bytes(totals.totalBytes)}{' '}
+                      used
+                    </p>
+                  </div>
                   <button
-                    autoFocus
                     className="button"
-                    disabled={busy}
-                    onClick={() => setRemove(null)}
-                  >
-                    Keep it
-                  </button>
-                  <button
-                    className="button files-error"
-                    disabled={busy}
+                    disabled={busy || uploading}
                     onClick={() =>
                       void act(async () => {
-                        await request(
-                          `delete?path=${encodeURIComponent(remove.path)}`,
-                          'DELETE',
-                        );
-                        setRemove(null);
                         await refresh();
                       })
                     }
                   >
-                    Delete permanently
+                    <RefreshCw size={16} /> Refresh
                   </button>
                 </div>
+                <input
+                  className="files-search"
+                  type="search"
+                  placeholder="Find a file or folder…"
+                  aria-label="Find files"
+                  value={filter}
+                  onChange={(e) => setFilter(e.target.value)}
+                />
+                {!entries.length && (
+                  <p className="files-empty">
+                    Nothing here yet. Your first upload starts here.
+                  </p>
+                )}
+                <div className="files-list">
+                  {entries
+                    .filter((entry) =>
+                      entry.path.toLowerCase().includes(filter.toLowerCase()),
+                    )
+                    .map((entry) => (
+                      <div className="files-row" key={entry.path}>
+                        <div className="files-name">
+                          <span>{entry.directory ? '📁' : '📄'}</span>
+                          <div>
+                            <strong>{entry.path}</strong>
+                            <small>
+                              {entry.directory ? 'Folder' : bytes(entry.size)} ·{' '}
+                              {new Date(entry.modified).toLocaleString()}
+                            </small>
+                          </div>
+                        </div>
+                        <div className="files-actions">
+                          {!entry.directory && (
+                            <a
+                              className="icon-button"
+                              aria-label={`Download ${entry.path}`}
+                              href={`/api/files/download?path=${encodeURIComponent(entry.path)}`}
+                            >
+                              <Download size={18} />
+                            </a>
+                          )}
+                          <button
+                            className="icon-button"
+                            disabled={uploading || busy}
+                            aria-label={`Delete ${entry.path}`}
+                            onClick={() => setRemove(entry)}
+                          >
+                            <Trash2 size={17} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                </div>
               </section>
-            </div>
-          )}
+            )}
+            {remove && (
+              <div
+                className="files-confirm"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="files-delete-title"
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') setRemove(null);
+                }}
+              >
+                <section className="files-panel">
+                  <h2 id="files-delete-title">
+                    Delete {remove.directory ? 'folder' : 'file'}?
+                  </h2>
+                  <p>
+                    {remove.path}
+                    {remove.directory ? ' and everything inside it' : ''} will
+                    be permanently deleted.
+                  </p>
+                  <div className="files-actions">
+                    <button
+                      autoFocus
+                      className="button"
+                      disabled={busy}
+                      onClick={() => setRemove(null)}
+                    >
+                      Keep it
+                    </button>
+                    <button
+                      className="button files-error"
+                      disabled={busy}
+                      onClick={() =>
+                        void act(async () => {
+                          await request(
+                            `delete?path=${encodeURIComponent(remove.path)}`,
+                            'DELETE',
+                          );
+                          setRemove(null);
+                          await refresh();
+                        })
+                      }
+                    >
+                      Delete permanently
+                    </button>
+                  </div>
+                </section>
+              </div>
+            )}
+          </div>
         </>
       )}
       {settings?.admin && (

@@ -971,3 +971,102 @@ test('multiple configured origins allow LAN and HTTPS logins with separate cooki
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test('guest pastes preserve text and separate entries across restarts with PIN and origin protection', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'directory-pastes-api-'));
+  const options = { FILES_PIN: 'paste-pin' };
+  let server = await start(directory, options);
+  try {
+    const request = (
+      action: string,
+      method = 'GET',
+      body?: unknown,
+      cookie?: string,
+      origin = server.origin,
+    ) =>
+      fetch(`${server.origin}/api/files/${action}`, {
+        method,
+        headers: {
+          Origin: origin,
+          'Content-Type': 'application/json',
+          ...(cookie ? { Cookie: cookie } : {}),
+        },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      });
+    const unlock = async () =>
+      cookieFrom(await request('unlock', 'POST', { pin: options.FILES_PIN }));
+    assert.equal((await request('pastes')).status, 401);
+    assert.equal(
+      (await request('pastes', 'POST', { text: 'private' })).status,
+      401,
+    );
+    assert.equal((await request('pastes?id=anything', 'DELETE')).status, 401);
+    const guest = await unlock();
+    const text = '  Hello\n<script>alert("text only")</script>\n\u4e16\u754c  ';
+    const created = await request('pastes', 'POST', { text }, guest);
+    assert.equal(created.status, 201);
+    const paste = await created.json();
+    assert.equal(paste.text, text);
+    const second = await (
+      await request('pastes', 'POST', { text }, guest)
+    ).json();
+    assert.notEqual(paste.id, second.id);
+    assert.equal(
+      (await request('pastes', 'POST', { text: '  ' }, guest)).status,
+      400,
+    );
+    assert.equal(
+      (await request('pastes', 'POST', { text: 'x'.repeat(1048577) }, guest))
+        .status,
+      413,
+    );
+    assert.equal(
+      (await request('pastes', 'POST', { text }, guest, 'https://evil.example'))
+        .status,
+      403,
+    );
+    assert.equal(
+      (await request('pastes?id=../files-settings', 'DELETE', undefined, guest))
+        .status,
+      400,
+    );
+    const listing = await (
+      await request('pastes', 'GET', undefined, guest)
+    ).json();
+    assert.equal(listing.pastes.length, 2);
+    await request('lock', 'POST', undefined, guest);
+    assert.equal(
+      (await request('pastes', 'GET', undefined, guest)).status,
+      401,
+    );
+    await server.stop();
+    server = await start(directory, options);
+    const restored = await unlock();
+    const saved = (
+      await (await request('pastes', 'GET', undefined, restored)).json()
+    ).pastes;
+    assert.equal(saved.length, 2);
+    assert.equal(
+      saved.find((entry: { id: string }) => entry.id === paste.id).text,
+      text,
+    );
+    assert.equal(
+      (await request(`pastes?id=${paste.id}`, 'DELETE', undefined, restored))
+        .status,
+      200,
+    );
+    assert.equal(
+      (await (await request('pastes', 'GET', undefined, restored)).json())
+        .pastes.length,
+      1,
+    );
+    assert.equal(
+      (await request(`pastes?id=${paste.id}`, 'DELETE', undefined, restored))
+        .status,
+      404,
+    );
+  } finally {
+    await server.stop();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
